@@ -13,5 +13,54 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\midi">
+      <UniqueIdentifier>{d46b6bdb-d72f-48aa-bfbf-07da1d336da2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\midi">
+      <UniqueIdentifier>{68eff2dd-4bc7-4aff-8f22-5c91561f1d3f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="midi\src\Binasc.cpp">
+      <Filter>Source Files\midi</Filter>
+    </ClCompile>
+    <ClCompile Include="midi\src\MidiEvent.cpp">
+      <Filter>Source Files\midi</Filter>
+    </ClCompile>
+    <ClCompile Include="midi\src\MidiEventList.cpp">
+      <Filter>Source Files\midi</Filter>
+    </ClCompile>
+    <ClCompile Include="midi\src\MidiFile.cpp">
+      <Filter>Source Files\midi</Filter>
+    </ClCompile>
+    <ClCompile Include="midi\src\MidiMessage.cpp">
+      <Filter>Source Files\midi</Filter>
+    </ClCompile>
+    <ClCompile Include="midi\src\Options.cpp">
+      <Filter>Source Files\midi</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="midi\inc\Binasc.h">
+      <Filter>Header Files\midi</Filter>
+    </ClInclude>
+    <ClInclude Include="midi\inc\MidiEvent.h">
+      <Filter>Header Files\midi</Filter>
+    </ClInclude>
+    <ClInclude Include="midi\inc\MidiEventList.h">
+      <Filter>Header Files\midi</Filter>
+    </ClInclude>
+    <ClInclude Include="midi\inc\MidiFile.h">
+      <Filter>Header Files\midi</Filter>
+    </ClInclude>
+    <ClInclude Include="midi\inc\MidiMessage.h">
+      <Filter>Header Files\midi</Filter>
+    </ClInclude>
+    <ClInclude Include="midi\inc\Options.h">
+      <Filter>Header Files\midi</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
