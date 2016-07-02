@@ -3,15 +3,19 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <stdio.h>
 using namespace std;
 
 // TODO:
-//     + Incorporate vibrato and fine-pitch range
+//     + Determine m64 vibrato range
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "Space.mid"
+#define DEBUG_MIDI_FILE "velocity_test.mid"
 #endif
+
+#define NOTE_BIAS 27
 
 short bit_mask_from_value[16] =
 	{	0x0001, 0x0003, 0x0007, 0x000F,
@@ -243,7 +247,7 @@ public:
 	Sequence()
 	{
 		tempo_source = PARAM_SOURCE_NONE;
-		source_vibrato_range = 2;
+		source_vibrato_range = 7;
 		source_fine_pitch_range = 24;
 		bank = 0;
 		volume = 196;
@@ -299,7 +303,7 @@ public:
 		float offset;
 	};
 
-	std::vector<char> create_m64()
+	std::vector<uchar> create_m64()
 	{
 #define ADD(_X_) m64.push_back(_X_)
 #define ADD_W(_X_)							\
@@ -316,7 +320,7 @@ public:
 			ADD_W((_X_) | 0x8000);			\
 		}									\
 	}
-		vector<char> m64;
+		vector<uchar> m64;
 		vector<int> track_pointers;
 		vector<int> note_pointers;
 		vector<EventStream> events;
@@ -330,7 +334,18 @@ public:
 		int cur_note_group;
 		int note_group;
 		int note;
-		int trans_amt;
+		int note_fmt;
+		int prev_duration;
+		int this_duration;
+		int mode;
+		int this_and_next_duration;
+		float play_percentage;
+		bool next_note_is_rest;
+		float fine_pitch_scaling;
+		float vibrato_scaling;
+
+		fine_pitch_scaling = source_fine_pitch_range / 12.0;
+		vibrato_scaling = source_vibrato_range / 12.0;
 
 		ADD(0xD3);									
 		ADD((unsigned char)bank);					
@@ -419,7 +434,7 @@ public:
 					EventStream(
 						&sources[tracks[i].fine_pitch_source].events,
 						0xD3,
-						255, -128)
+						255.0*fine_pitch_scaling, -128.0*fine_pitch_scaling)
 					);
 			}
 			if (tracks[i].pan_source == PARAM_SOURCE_NONE)
@@ -447,7 +462,7 @@ public:
 					EventStream(
 						&sources[tracks[i].vibrato_source].events,
 						0xD8,
-						255, 0)
+						255.0*vibrato_scaling, 0)
 					);
 			}
 			if (tracks[i].volume_source == PARAM_SOURCE_NONE)
@@ -499,9 +514,10 @@ public:
 		}
 		for (i = 0; i < tracks.size(); i++)
 		{
-			*((short*)&(m64[track_pointers[i]])) = rev_short(m64.size());
+			*((short*)&(m64[note_pointers[i]])) = rev_short(m64.size());
 			j = 0;
-			cur_note_group = 27;
+			cur_note_group = 0;
+			prev_duration = 0;
 			while (j < tracks[i].notes.size())
 			{
 				if (tracks[i].notes[j].type == NoteType::Rest)
@@ -516,40 +532,113 @@ public:
 						ADD_V(tracks[i].notes[j + 1].ticks -
 							tracks[i].notes[j].ticks);
 					}
+					j += 1;
 				}
 				else if (tracks[i].notes[j].type == NoteType::Note)
 				{
 					note = tracks[i].notes[j].note;
-					trans_amt = 0;
-					while((note - cur_note_group) >= 0x40)
+					note_group = cur_note_group;
+					while ((note - (note_group * 64 + NOTE_BIAS)) < 0)
 					{
-						cur_note_group += 64;
-						trans_amt += 64;
+						note_group--;
 					}
-					while ((note - cur_note_group) < 0x00)
+					while ((note - (note_group * 64 + NOTE_BIAS)) >= 64)
 					{
-						cur_note_group -= 64;
-						trans_amt -= 64;
+						note_group++;
 					}
-					if (trans_amt != 0)
+					if (note_group != cur_note_group)
 					{
 						ADD(0xC2);
-						ADD(trans_amt);
+						ADD(note_group * 64);
+						cur_note_group = note_group;
+					}
+
+					if (j == (tracks[i].notes.size() - 1))
+					{
+						next_note_is_rest = false;
+						this_duration = total_ticks - tracks[i].notes[j].ticks;
+					}
+					else
+					{
+						this_duration = tracks[i].notes[j + 1].ticks - 
+							tracks[i].notes[j].ticks;
+						if (j == (tracks[i].notes.size() - 2))
+						{
+							this_and_next_duration = total_ticks - 
+								tracks[i].notes[j].ticks;
+						}
+						else
+						{
+							this_and_next_duration = tracks[i].notes[
+									j + 2
+								].ticks - tracks[i].notes[j].ticks;
+						}
+						if (tracks[i].notes[j + 1].type == NoteType::Rest)
+						{
+							next_note_is_rest = true;
+						}
+						else
+						{
+							next_note_is_rest = false;
+						}
 					}
 					
-					// decide which note type, including whether or not
-					//    to skip next rest
+					if (next_note_is_rest)
+					{
+						if (this_and_next_duration <= 255)
+						{
+							if (this_and_next_duration == prev_duration)
+							{
+								mode = 3;
+							}
+							else
+							{
+								mode = 1;
+							}
+						}
+						else
+						{
+							mode = 2;
+						}
+					}
+					else
+					{
+						mode = 2;
+					}
 
+					note_fmt = note - (cur_note_group * 64 + NOTE_BIAS);
+					switch (mode)
+					{
+					case 1:
+						ADD(note_fmt);
+						ADD_V(this_and_next_duration);
+						prev_duration = this_and_next_duration;
+						ADD(tracks[i].notes[j].velocity * 255.0);
+						play_percentage = ((float) (this_and_next_duration - 
+							this_duration)) / 
+								((float) this_and_next_duration) * 255.0;
+						ADD(play_percentage);
+						j += 2;
+						break;
+					case 2:
+						ADD(64 + note_fmt);
+						ADD_V(this_duration);
+						prev_duration = this_duration;
+						ADD(tracks[i].notes[j].velocity * 255.0);
+						j += 1;
+						break;
+					case 3:
+						ADD(128 + note_fmt);
+						ADD(tracks[i].notes[j].velocity * 255.0);
+						play_percentage = ((float)(this_and_next_duration -
+							this_duration)) /
+							((float)this_and_next_duration) * 255.0;
+						ADD(play_percentage);
+						j += 2;
+					}
 				}
 			}
-			ADD(0xFF);
 		}
-
-		//0x00 to 0x3f
-		//0th requires duration, vel, % on.
-		//1st requires duration, vel. % on = 100.
-		//2nd requires vel, % on. duration = that of previous. 
-
 		return m64;
 	}
 	int tempo_source; 
@@ -603,6 +692,8 @@ void press_enter_to_continue()
 
 int main(int _argc, char** _argv)
 {
+	string filename;
+	string out_filename;
 	int cur_track;
 	int cur_event;
 	int i;
@@ -614,11 +705,12 @@ int main(int _argc, char** _argv)
 	int last_note_ending_ticks;
 	vector<ControllerSource> cur_sources;
 	size_t previous_size;
-	
+	vector<uchar> m64;
+	fstream output;
+	MidiFile midifile;
 #ifdef _NDEBUG
 	Options options;
 #endif
-	MidiFile midifile;
 
 #ifdef _NDEBUG
 	options.process(_argc, _argv);
@@ -627,20 +719,18 @@ int main(int _argc, char** _argv)
 		cerr << "You must specify exactly one MIDI file.\n";
 		return 1;
 	}
-	midifile.read(options.getArg(1));
-	if (!midifile.status()) 
-	{
-		cerr << "Error reading MIDI file " << options.getArg(1) << endl;
-		return 1;
-	}
+	filename = options.getArg(1);
 #else
-	midifile.read(DEBUG_MIDI_FILE);
+	filename = DEBUG_MIDI_FILE;
+#endif
+
+	midifile.read(filename);
 	if (!midifile.status())
 	{
-		cerr << "Error reading MIDI file " << DEBUG_MIDI_FILE << endl;
+		cerr << "Error reading MIDI file " << filename << endl;
 		return 1;
 	}
-#endif
+
 	midifile.linkNotePairs();
 	midifile.absoluteTicks();
 	midifile.sortTracks();
@@ -797,18 +887,26 @@ int main(int _argc, char** _argv)
 	}
 	seq.convert_clock_base();
 	seq.trim_events();
-	
 
-	
+
+
+	seq.bank = 0x22;
+
+
+
+
 	press_enter_to_continue();
-
-
-	vector<char> m64 = seq.create_m64();
-	for (i = 0; i < m64.size(); i++)
-	{
-		cout << hex << (((int) m64[i]) & 0xFF ) << " ";
-	}
-	press_enter_to_continue();
+		
+	m64.clear();
+	m64 = seq.create_m64();
+	
+	out_filename = filename.substr(0, filename.find_last_of("."));
+	out_filename += ".m64";
+	remove(out_filename.c_str());
+	output.open(out_filename, ios::out | ios::binary);
+	output.write((const char*)&m64[0], m64.size());
+	output.close();
+	
 
 	// permit relinking of automation parameters
 	// permit addition of "baseline values" to automation parameters (pitch fine, transpose, pan, ch volume, echo, vibrato)
