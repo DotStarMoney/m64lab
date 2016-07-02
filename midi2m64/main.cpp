@@ -8,14 +8,15 @@
 using namespace std;
 
 // TODO:
-//     + Determine m64 vibrato range
+//     + Determine m64 max volume, is it really 100?
+//     + Determine m64 vibrato pitch range
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "velocity_test.mid"
+#define DEBUG_MIDI_FILE "MidiEventTest.mid"
 #endif
 
-#define NOTE_BIAS 27
+#define NOTE_BIAS 21
 
 short bit_mask_from_value[16] =
 	{	0x0001, 0x0003, 0x0007, 0x000F,
@@ -248,7 +249,7 @@ public:
 	{
 		tempo_source = PARAM_SOURCE_NONE;
 		source_vibrato_range = 7;
-		source_fine_pitch_range = 24;
+		source_fine_pitch_range = 12;
 		bank = 0;
 		volume = 1.0;
 	}
@@ -912,13 +913,12 @@ int main(int _argc, char** _argv)
 
 
 
+	// obviously this needs to be an option, as well as everything else
+	//    (like control automation) that this application was designed to do...
 	seq.bank = 0x22;
 
 
 
-
-	press_enter_to_continue();
-		
 	m64.clear();
 	m64 = seq.create_m64();
 	
@@ -929,15 +929,6 @@ int main(int _argc, char** _argv)
 	output.write((const char*)&m64[0], m64.size());
 	output.close();
 	
-
-	// permit relinking of automation parameters
-	// permit addition of "baseline values" to automation parameters (pitch fine, transpose, pan, ch volume, echo, vibrato)
-	// permit editing of output instrument numbers
-	// permit disabling of channels (remove channel from output)
-	// permit editing of loop point
-	// permit editing of tempo, master volume, master transpose (fake), maskter echo (fake)
-
-
 
 	return 0;
 }
