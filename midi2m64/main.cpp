@@ -250,7 +250,7 @@ public:
 		source_vibrato_range = 7;
 		source_fine_pitch_range = 24;
 		bank = 0;
-		volume = 196;
+		volume = 1.0;
 	}
 	void trim_events()
 	{
@@ -343,6 +343,7 @@ public:
 		bool next_note_is_rest;
 		float fine_pitch_scaling;
 		float vibrato_scaling;
+		bool delta_time_event;
 
 		fine_pitch_scaling = source_fine_pitch_range / 12.0;
 		vibrato_scaling = source_vibrato_range / 12.0;
@@ -359,14 +360,18 @@ public:
 			track_pointers.push_back(m64.size() - 2);
 		}
 		ADD(0xDB);									
-		ADD(volume);								
+		ADD(volume * 100.0);	
+
 		if (tempo_source == PARAM_SOURCE_NONE)		
 		{											
 			ADD(0xDD);								
-			ADD(0x78);								
+			ADD(0x78);		
+			ADD(0xFD);
+			ADD_V(total_ticks);
 		}
 		else
 		{
+			delta_time_event = false;
 			last_tick = 0;
 			for (i = 0; 
 				i < sources[tempo_source].events.size(); 
@@ -375,12 +380,18 @@ public:
 				tick = sources[tempo_source].events[i].ticks;
 				if (tick > 0)
 				{
+					delta_time_event = true;
 					ADD(0xFD);
 					ADD_V(tick - last_tick);
 				}
 				ADD(0xDD);
 				ADD((uchar)(sources[tempo_source].get(i) * 255.0));
 				last_tick = tick;
+			}
+			if (!delta_time_event)
+			{
+				ADD(0xFD);
+				ADD_V(total_ticks);
 			}
 		}
 		ADD(0xFF);
@@ -476,18 +487,19 @@ public:
 					EventStream(
 						&sources[tracks[i].volume_source].events,
 						0xDF,
-						255, 0)
+						100, 0)
 					);
 			}
 			last_tick = 0;
-			while(!events.empty())
-			{			
+			delta_time_event = false;
+			while (!events.empty())
+			{
 				near_event = 0;
 				tick = (*(events[0].event_source))[events[0].cur_event].ticks;
 				for (j = 1; j < events.size(); j++)
 				{
 					if ((*(events[j].event_source))[
-							events[j].cur_event].ticks < tick)
+						events[j].cur_event].ticks < tick)
 					{
 						tick = (*(events[j].event_source))[
 							events[j].cur_event].ticks;
@@ -499,7 +511,12 @@ public:
 				val_int = (int)(value * events[near_event].multiplier +
 					events[near_event].offset);
 
-				if (tick != last_tick) ADD_V(tick - last_tick);
+				if (tick != last_tick)
+				{
+					delta_time_event = true;
+					ADD(0xFD);
+					ADD_V(tick - last_tick);
+				}
 				ADD(events[near_event].event_code);
 				ADD(val_int);
 				events[near_event].cur_event++;
@@ -509,6 +526,11 @@ public:
 					events.erase(events.begin() + near_event);
 				}
 				last_tick = tick;
+			} 
+			if (!delta_time_event)
+			{
+				ADD(0xFD);
+				ADD_V(total_ticks);
 			}
 			ADD(0xFF);
 		}
@@ -613,7 +635,7 @@ public:
 						ADD(note_fmt);
 						ADD_V(this_and_next_duration);
 						prev_duration = this_and_next_duration;
-						ADD(tracks[i].notes[j].velocity * 255.0);
+						ADD(tracks[i].notes[j].velocity * 100.0);
 						play_percentage = ((float) (this_and_next_duration - 
 							this_duration)) / 
 								((float) this_and_next_duration) * 255.0;
@@ -624,12 +646,12 @@ public:
 						ADD(64 + note_fmt);
 						ADD_V(this_duration);
 						prev_duration = this_duration;
-						ADD(tracks[i].notes[j].velocity * 255.0);
+						ADD(tracks[i].notes[j].velocity * 100.0);
 						j += 1;
 						break;
 					case 3:
 						ADD(128 + note_fmt);
-						ADD(tracks[i].notes[j].velocity * 255.0);
+						ADD(tracks[i].notes[j].velocity * 100.0);
 						play_percentage = ((float)(this_and_next_duration -
 							this_duration)) /
 							((float)this_and_next_duration) * 255.0;
@@ -649,7 +671,7 @@ public:
 	uint32_t ticks_per_quarter; 
 	int total_ticks;
 	unsigned char bank;
-	unsigned char volume;
+	float volume;
 };
 
 int get_source_index(vector<ControllerSource>& _sources,
