@@ -8,15 +8,18 @@
 using namespace std;
 
 // TODO:
-//     + Determine m64 max volume, is it really 100?
-//     + Determine m64 vibrato pitch range
+//     + Combine coarse and fine pitch so that both are updated to reflect
+//       the source pitch bend range
+//     + Determine root pitch for note offset (NOTE_BIAS)
+//     + Determine m64 volume scaling, definitely sounds wrong
+//	   + Find out why coarse pitch scaling not seeming to have an effect
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "LeadTest.mid"
+#define DEBUG_MIDI_FILE "Legacy64.mid"
 #endif
 
-#define NOTE_BIAS 21
+#define NOTE_BIAS 24
 
 short bit_mask_from_value[16] =
 	{	0x0001, 0x0003, 0x0007, 0x000F,
@@ -179,6 +182,7 @@ public:
 		echo_source = PARAM_SOURCE_NONE;
 		vibrato_source = PARAM_SOURCE_NONE;
 		instrument = 0;
+		velocity_multiplier = 1.0;
 	}
 	void convert_clock_base(int _from_base, int _total_ticks)
 	{
@@ -240,6 +244,7 @@ public:
 	int pan_source;
 	int echo_source;
 	int vibrato_source;
+	float velocity_multiplier;
 };
 
 class Sequence
@@ -286,7 +291,7 @@ public:
 	{
 	public:
 		EventStream(
-			std::vector<ControllerEvent>* _event_source,
+			ControllerSource* _event_source,
 			unsigned char _event_code,
 			float _multiplier,
 			float _offset)
@@ -298,7 +303,7 @@ public:
 			offset = _offset;
 		}
 		int cur_event;
-		std::vector<ControllerEvent>* event_source;
+		ControllerSource* event_source;
 		unsigned char event_code;
 		float multiplier;
 		float offset;
@@ -344,6 +349,7 @@ public:
 		bool next_note_is_rest;
 		float fine_pitch_scaling;
 		float vibrato_scaling;
+		float note_vel;
 		bool delta_time_event;
 
 		fine_pitch_scaling = source_fine_pitch_range / 12.0;
@@ -361,7 +367,7 @@ public:
 			track_pointers.push_back(m64.size() - 2);
 		}
 		ADD(0xDB);									
-		ADD(volume * 100.0);	
+		ADD(volume * 100.0); // NO CLUE WHAT THIS NUMBER ACTUALLY IS
 
 		if (tempo_source == PARAM_SOURCE_NONE)		
 		{											
@@ -416,7 +422,7 @@ public:
 			{
 				events.push_back(
 					EventStream(
-						&sources[tracks[i].coarse_pitch_source].events, 
+						&sources[tracks[i].coarse_pitch_source], 
 						0xC2, 
 						255, -128)
 					);
@@ -430,7 +436,7 @@ public:
 			{
 				events.push_back(
 					EventStream(
-						&sources[tracks[i].echo_source].events,
+						&sources[tracks[i].echo_source],
 						0xD4,
 						255, 0)
 					);
@@ -444,7 +450,7 @@ public:
 			{
 				events.push_back(
 					EventStream(
-						&sources[tracks[i].fine_pitch_source].events,
+						&sources[tracks[i].fine_pitch_source],
 						0xD3,
 						255.0*fine_pitch_scaling, -128.0*fine_pitch_scaling)
 					);
@@ -458,7 +464,7 @@ public:
 			{
 				events.push_back(
 					EventStream(
-						&sources[tracks[i].pan_source].events,
+						&sources[tracks[i].pan_source],
 						0xDD,
 						126, 1)
 					);
@@ -472,7 +478,7 @@ public:
 			{
 				events.push_back(
 					EventStream(
-						&sources[tracks[i].vibrato_source].events,
+						&sources[tracks[i].vibrato_source],
 						0xD8,
 						255.0*vibrato_scaling, 1)
 					);
@@ -486,9 +492,9 @@ public:
 			{
 				events.push_back(
 					EventStream(
-						&sources[tracks[i].volume_source].events,
+						&sources[tracks[i].volume_source],
 						0xDF,
-						100, 0)
+						128, 0) // NO CLUE WHAT THIS NUMBER ACTUALLY IS
 					);
 			}
 			last_tick = 0;
@@ -496,19 +502,21 @@ public:
 			while (!events.empty())
 			{
 				near_event = 0;
-				tick = (*(events[0].event_source))[events[0].cur_event].ticks;
+				tick = (*(events[0].event_source)).events[
+					events[0].cur_event].ticks;
 				for (j = 1; j < events.size(); j++)
 				{
-					if ((*(events[j].event_source))[
+					if ((*(events[j].event_source)).events[
 						events[j].cur_event].ticks < tick)
 					{
-						tick = (*(events[j].event_source))[
+						tick = (*(events[j].event_source)).events[
 							events[j].cur_event].ticks;
 						near_event = j;
 					}
 				}
-				value = (*(events[near_event].event_source))[
-					events[near_event].cur_event].value;
+
+				value = (*(events[near_event].event_source)).get(
+					events[near_event].cur_event);
 				val_int = (int)(value * events[near_event].multiplier +
 					events[near_event].offset);
 
@@ -521,7 +529,7 @@ public:
 				ADD(events[near_event].event_code);
 				ADD(val_int);
 				events[near_event].cur_event++;
-				if (events[near_event].event_source->size() ==
+				if (events[near_event].event_source->events.size() ==
 					events[near_event].cur_event)
 				{
 					events.erase(events.begin() + near_event);
@@ -636,7 +644,17 @@ public:
 						ADD(note_fmt);
 						ADD_V(this_and_next_duration);
 						prev_duration = this_and_next_duration;
-						ADD(tracks[i].notes[j].velocity * 100.0);
+						note_vel = tracks[i].notes[j].velocity *
+							tracks[i].velocity_multiplier;
+						if (note_vel > 1.0)
+						{
+							note_vel = 1.0;
+						}
+						else if (note_vel < 0.0)
+						{
+							note_vel = 0.0;
+						}
+						ADD(note_vel * 100.0);
 						play_percentage = ((float) (this_and_next_duration - 
 							this_duration)) / 
 								((float) this_and_next_duration) * 255.0;
@@ -647,12 +665,32 @@ public:
 						ADD(64 + note_fmt);
 						ADD_V(this_duration);
 						prev_duration = this_duration;
-						ADD(tracks[i].notes[j].velocity * 100.0);
+						note_vel = tracks[i].notes[j].velocity *
+							tracks[i].velocity_multiplier;
+						if (note_vel > 1.0)
+						{
+							note_vel = 1.0;
+						}
+						else if (note_vel < 0.0)
+						{
+							note_vel = 0.0;
+						}
+						ADD(note_vel * 100.0);
 						j += 1;
 						break;
 					case 3:
 						ADD(128 + note_fmt);
-						ADD(tracks[i].notes[j].velocity * 100.0);
+						note_vel = tracks[i].notes[j].velocity *
+							tracks[i].velocity_multiplier;
+						if (note_vel > 1.0)
+						{
+							note_vel = 1.0;
+						}
+						else if (note_vel < 0.0)
+						{
+							note_vel = 0.0;
+						}
+						ADD(note_vel * 100.0);
 						play_percentage = ((float)(this_and_next_duration -
 							this_duration)) /
 							((float)this_and_next_duration) * 255.0;
@@ -911,13 +949,58 @@ int main(int _argc, char** _argv)
 	seq.convert_clock_base();
 	seq.trim_events();
 
+	// DEMO TRACK STUFF
+	/*
+	seq.bank = 0x25;
+
+	seq.sources[seq.tracks[0].fine_pitch_source].base_value = -(0.2 / 12.0) * 0.5;
+	seq.sources[seq.tracks[0].volume_source].multiplier = 1.4;
+	seq.sources[seq.tracks[0].volume_source].base_value = -0.4;
+	seq.sources[seq.tracks[0].pan_source].base_value = 0.09;
+
+	seq.sources[seq.tracks[1].volume_source].multiplier = 1.2;
+
+	seq.sources[seq.tracks[2].pan_source].base_value = -0.09;
+	seq.sources[seq.tracks[2].fine_pitch_source].base_value = 0.352;
+	seq.sources[seq.tracks[3].fine_pitch_source].base_value = -0.2;
+	seq.sources[seq.tracks[3].volume_source].base_value = 0.5;
+	seq.sources[seq.tracks[2].volume_source].base_value = -0.4;
+
+	seq.tracks[3].velocity_multiplier = 1.1;
+
+	seq.sources[seq.tracks[4].fine_pitch_source].base_value = -0.3 / 12.0;
+	seq.sources[seq.tracks[5].fine_pitch_source].base_value = -0.3 / 12.0;
+	seq.sources[seq.tracks[6].fine_pitch_source].base_value = -0.3 / 12.0;
 
 
-	// obviously this needs to be an option, as well as everything else
-	//    (like control automation) that this application was designed to do...
-	seq.bank = 0x22;
+	seq.sources[seq.tracks[7].fine_pitch_source].base_value = (-3.2 / 12.0) * 0.5;
+	seq.sources[seq.tracks[8].fine_pitch_source].base_value = (-0.2 / 12.0) * 0.5;
+
+	/////////////////////////
+	seq.tracks[7].velocity_multiplier = 1.4;
+	seq.tracks[8].velocity_multiplier = 1.4;
+	seq.sources[seq.tracks[7].volume_source].base_value = -0.5;
+	seq.sources[seq.tracks[8].volume_source].base_value = -0.5;
+	seq.sources[seq.tracks[7].pan_source].base_value = -0.1;
+	seq.sources[seq.tracks[8].pan_source].base_value = 0.1;
+
+	////////////////////////
+
+
 	seq.tracks[0].vibrato_source = 8;
-
+	seq.sources[8].multiplier = 1.4;
+	
+	seq.tracks[0].instrument = 0;
+	seq.tracks[1].instrument = 1;
+	seq.tracks[2].instrument = 2;
+	seq.tracks[3].instrument = 3;
+	seq.tracks[4].instrument = 4;
+	seq.tracks[5].instrument = 5;
+	seq.tracks[6].instrument = 6;
+	seq.tracks[7].instrument = 8;
+	seq.tracks[8].instrument = 9;
+	
+	*/
 
 	m64.clear();
 	m64 = seq.create_m64();
