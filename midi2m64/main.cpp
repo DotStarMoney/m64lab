@@ -950,7 +950,7 @@ int main(int _argc, char** _argv)
 	seq.trim_events();
 
 	// DEMO TRACK STUFF
-	/*
+	
 	seq.bank = 0x25;
 
 	seq.sources[seq.tracks[0].fine_pitch_source].base_value = -(0.2 / 12.0) * 0.5;
@@ -972,7 +972,6 @@ int main(int _argc, char** _argv)
 	seq.sources[seq.tracks[5].fine_pitch_source].base_value = -0.3 / 12.0;
 	seq.sources[seq.tracks[6].fine_pitch_source].base_value = -0.3 / 12.0;
 
-
 	seq.sources[seq.tracks[7].fine_pitch_source].base_value = (-3.2 / 12.0) * 0.5;
 	seq.sources[seq.tracks[8].fine_pitch_source].base_value = (-0.2 / 12.0) * 0.5;
 
@@ -985,8 +984,6 @@ int main(int _argc, char** _argv)
 	seq.sources[seq.tracks[8].pan_source].base_value = 0.1;
 
 	////////////////////////
-
-
 	seq.tracks[0].vibrato_source = 8;
 	seq.sources[8].multiplier = 1.4;
 	
@@ -1000,8 +997,6 @@ int main(int _argc, char** _argv)
 	seq.tracks[7].instrument = 8;
 	seq.tracks[8].instrument = 9;
 	
-	*/
-
 	m64.clear();
 	m64 = seq.create_m64();
 	
