@@ -9,19 +9,21 @@ using namespace std;
 
 // TODO:
 //     + Combine coarse and fine pitch so that both are updated to reflect
-//       the source pitch bend range
+//       the source pitch bend range, use note splitting
+//	   + Add non-coincidental event removal
+//     + Add event compression
+//     + Add layering compression
 //     + Determine root pitch for note offset (NOTE_BIAS)
 //     + Determine m64 volume scaling, definitely sounds wrong
-//	   + Find out why coarse pitch scaling not seeming to have an effect
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "Legacy64.mid"
+#define DEBUG_MIDI_FILE "smrpgtest.mid"
 #endif
 
 #define NOTE_BIAS 24
 
-short bit_mask_from_value[16] =
+unsigned short bit_mask_from_value[16] =
 	{	0x0001, 0x0003, 0x0007, 0x000F,
 		0x001F, 0x003F, 0x007F, 0x00FF,
 		0x01FF, 0x03FF, 0x07FF, 0x0FFF,
@@ -951,8 +953,15 @@ int main(int _argc, char** _argv)
 
 	// DEMO TRACK STUFF
 	
-	seq.bank = 0x25;
+	seq.bank = 23;
 
+	seq.tracks[0].instrument = 4;
+
+	cout << seq.tracks.size() << endl;
+
+	press_enter_to_continue();
+
+	/*
 	seq.sources[seq.tracks[0].fine_pitch_source].base_value = -(0.2 / 12.0) * 0.5;
 	seq.sources[seq.tracks[0].volume_source].multiplier = 1.4;
 	seq.sources[seq.tracks[0].volume_source].base_value = -0.4;
@@ -996,7 +1005,7 @@ int main(int _argc, char** _argv)
 	seq.tracks[6].instrument = 6;
 	seq.tracks[7].instrument = 8;
 	seq.tracks[8].instrument = 9;
-	
+	*/
 	m64.clear();
 	m64 = seq.create_m64();
 	
