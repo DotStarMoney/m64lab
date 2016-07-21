@@ -5,6 +5,7 @@
 #include <string>
 #include <fstream>
 #include <stdio.h>
+#include <math.h>
 using namespace std;
 
 // TODO:
@@ -15,6 +16,7 @@ using namespace std;
 //     + Add layering compression
 //     + Determine root pitch for note offset (NOTE_BIAS)
 //     + Determine m64 volume scaling, definitely sounds wrong
+//     + Build midi parsing into seq class
 //     + Add UI  
 
 #ifndef _NDEBUG
@@ -36,7 +38,6 @@ short rev_short(short _x)
 
 enum class ControllerSourceType
 {
-	CoarsePitch,
 	FinePitch, 
 	Volume, 
 	Pan, 
@@ -96,6 +97,7 @@ public:
 		multiplier = 1.0;
 		events.clear();
 		controller_number = -1;
+		owner_track_name = "";
 	}
 	void convert_clock_base(int _from_base, int _total_ticks)
 	{
@@ -163,6 +165,7 @@ public:
 	ControllerSourceType type;
 	int controller_number;
 	int owner_track_id;
+	string owner_track_name;
 };
 
 #define PARAM_SOURCE_NONE -1
@@ -177,7 +180,6 @@ public:
 	{
 		notes.clear();
 		name = "";
-		coarse_pitch_source = PARAM_SOURCE_NONE;
 		fine_pitch_source = PARAM_SOURCE_NONE;
 		volume_source = PARAM_SOURCE_NONE;
 		pan_source = PARAM_SOURCE_NONE;
@@ -240,7 +242,6 @@ public:
 	unsigned char instrument; 
 	string name; 
 	vector<NoteEvent> notes;
-	int coarse_pitch_source;
 	int fine_pitch_source;
 	int volume_source;
 	int pan_source;
@@ -272,6 +273,112 @@ public:
 				sources[i].events.pop_back();
 				j--;
 				if (j < 0) break;
+			}
+		}
+	}
+	void refactor_notes_to_pitch_bend(Track& _track, ControllerSource& _source)
+	{
+		int i;
+		int j;
+		int start_j;
+		int ticks;
+		int next_note_ticks;
+		float semitone_shift;
+		float semitone_offset;
+		bool has_events_flag;
+		j = 0;
+		for (i = 0; i < _track.notes.size(); i++)
+		{
+			if (_track.notes[i].type == NoteType::Note)
+			{
+				ticks = _track.notes[i].ticks;
+				if (i == (_track.notes.size() - 1))
+				{
+					next_note_ticks = total_ticks;
+				}
+				else
+				{
+					next_note_ticks = _track.notes[i + 1].ticks;
+				}
+				if (_source.events[j].ticks < ticks)
+				{
+					has_events_flag = false;
+					for (; j < _source.events.size(); j++)
+					{
+						if (_source.events[j].ticks > ticks)
+						{
+							j--;
+							has_events_flag = true;
+							break;
+						}
+					}
+					if (!has_events_flag) j--;
+					has_events_flag = true;
+				}
+				else
+				{
+					if (_source.events[j].ticks < next_note_ticks)
+					{
+						has_events_flag = true;
+					}
+					else
+					{
+						has_events_flag = false;
+					}
+				}
+	
+				if (has_events_flag)
+				{
+					do
+					{
+						semitone_shift = (_source.events[j].value*2.0 - 1.0)*
+							source_fine_pitch_range;
+						if (fabs(semitone_shift) > 12.0)
+						{
+							semitone_offset = 
+								floor((ceil(fabs(semitone_shift) - 1.0) /
+									12.0) + 0.5) * 12;
+							semitone_offset *= signbit(semitone_shift) ? 
+								-1.0 : 1.0;
+							if (_source.events[j].ticks < ticks)
+							{
+								_track.notes[i].note = 
+									((int)_track.notes[i].note) + 
+										(int) semitone_offset;
+							}
+							else
+							{
+								_track.notes.insert(_track.notes.begin + i + 1,
+									NoteEvent(
+										NoteType::Note,
+										_source.events[j].ticks,
+										_track.notes[i].velocity,
+										_track.notes[i].note + 
+											(int) semitone_offset));
+							}
+							if (_source.events[j].ticks < ticks)
+							{
+								_source.events.insert(
+									_source.events.begin + j + 1,
+									ControllerEvent(
+										ticks,
+										_source.events[j].value));
+								j++;
+							}
+							start_j = j;
+							for (; 
+								_source.events[j].ticks < next_note_ticks; 
+								j++)
+							{
+								_source.events[j].value += ((semitone_offset / 
+									source_fine_pitch_range) + 1.0) * 0.5;
+							}
+							j = start_j;
+						}
+						j++;
+					} while (_source.events[j].ticks < next_note_ticks);
+					j--;
+				}
 			}
 		}
 	}
@@ -415,20 +522,6 @@ public:
 			ADD(0xC1);
 			ADD(tracks[i].instrument);
 			events.clear();
-			if (tracks[i].coarse_pitch_source == PARAM_SOURCE_NONE)
-			{
-				ADD(0xC2);
-				ADD(0x00);
-			}
-			else
-			{
-				events.push_back(
-					EventStream(
-						&sources[tracks[i].coarse_pitch_source], 
-						0xC2, 
-						255, -128)
-					);
-			}
 			if (tracks[i].echo_source == PARAM_SOURCE_NONE)
 			{
 				ADD(0xD4);
@@ -917,6 +1010,10 @@ int main(int _argc, char** _argv)
 			}
 		}
 		previous_size = seq.sources.size();
+		for (i = 0; i < cur_sources.size(); i++)
+		{
+			cur_sources[i].owner_track_name = new_track.name;
+		}
 		seq.sources.insert(seq.sources.end(), 
 			cur_sources.begin(), 
 			cur_sources.end());
@@ -951,7 +1048,6 @@ int main(int _argc, char** _argv)
 	seq.convert_clock_base();
 	seq.trim_events();
 
-	// DEMO TRACK STUFF
 	
 	seq.bank = 23;
 
@@ -961,51 +1057,7 @@ int main(int _argc, char** _argv)
 
 	press_enter_to_continue();
 
-	/*
-	seq.sources[seq.tracks[0].fine_pitch_source].base_value = -(0.2 / 12.0) * 0.5;
-	seq.sources[seq.tracks[0].volume_source].multiplier = 1.4;
-	seq.sources[seq.tracks[0].volume_source].base_value = -0.4;
-	seq.sources[seq.tracks[0].pan_source].base_value = 0.09;
 
-	seq.sources[seq.tracks[1].volume_source].multiplier = 1.2;
-
-	seq.sources[seq.tracks[2].pan_source].base_value = -0.09;
-	seq.sources[seq.tracks[2].fine_pitch_source].base_value = 0.352;
-	seq.sources[seq.tracks[3].fine_pitch_source].base_value = -0.2;
-	seq.sources[seq.tracks[3].volume_source].base_value = 0.5;
-	seq.sources[seq.tracks[2].volume_source].base_value = -0.4;
-
-	seq.tracks[3].velocity_multiplier = 1.1;
-
-	seq.sources[seq.tracks[4].fine_pitch_source].base_value = -0.3 / 12.0;
-	seq.sources[seq.tracks[5].fine_pitch_source].base_value = -0.3 / 12.0;
-	seq.sources[seq.tracks[6].fine_pitch_source].base_value = -0.3 / 12.0;
-
-	seq.sources[seq.tracks[7].fine_pitch_source].base_value = (-3.2 / 12.0) * 0.5;
-	seq.sources[seq.tracks[8].fine_pitch_source].base_value = (-0.2 / 12.0) * 0.5;
-
-	/////////////////////////
-	seq.tracks[7].velocity_multiplier = 1.4;
-	seq.tracks[8].velocity_multiplier = 1.4;
-	seq.sources[seq.tracks[7].volume_source].base_value = -0.5;
-	seq.sources[seq.tracks[8].volume_source].base_value = -0.5;
-	seq.sources[seq.tracks[7].pan_source].base_value = -0.1;
-	seq.sources[seq.tracks[8].pan_source].base_value = 0.1;
-
-	////////////////////////
-	seq.tracks[0].vibrato_source = 8;
-	seq.sources[8].multiplier = 1.4;
-	
-	seq.tracks[0].instrument = 0;
-	seq.tracks[1].instrument = 1;
-	seq.tracks[2].instrument = 2;
-	seq.tracks[3].instrument = 3;
-	seq.tracks[4].instrument = 4;
-	seq.tracks[5].instrument = 5;
-	seq.tracks[6].instrument = 6;
-	seq.tracks[7].instrument = 8;
-	seq.tracks[8].instrument = 9;
-	*/
 	m64.clear();
 	m64 = seq.create_m64();
 	
