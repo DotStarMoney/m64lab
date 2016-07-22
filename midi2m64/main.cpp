@@ -9,18 +9,14 @@
 using namespace std;
 
 // TODO:
-//     + Combine coarse and fine pitch so that both are updated to reflect
-//       the source pitch bend range, use note splitting
-//	   + Add non-coincidental event removal
 //     + Add event compression
-//     + Add layering compression
 //     + Determine root pitch for note offset (NOTE_BIAS)
 //     + Determine m64 volume scaling, definitely sounds wrong
 //     + Build midi parsing into seq class
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "smrpgtest.mid"
+#define DEBUG_MIDI_FILE "pitchtest.mid"
 #endif
 
 #define NOTE_BIAS 24
@@ -285,6 +281,7 @@ public:
 		int next_note_ticks;
 		float semitone_shift;
 		float semitone_offset;
+		float value_adjust;
 		bool has_events_flag;
 		j = 0;
 		for (i = 0; i < _track.notes.size(); i++)
@@ -348,7 +345,8 @@ public:
 							}
 							else
 							{
-								_track.notes.insert(_track.notes.begin + i + 1,
+								_track.notes.insert(
+									_track.notes.begin() + i + 1,
 									NoteEvent(
 										NoteType::Note,
 										_source.events[j].ticks,
@@ -359,19 +357,20 @@ public:
 							if (_source.events[j].ticks < ticks)
 							{
 								_source.events.insert(
-									_source.events.begin + j + 1,
+									_source.events.begin() + j + 1,
 									ControllerEvent(
 										ticks,
 										_source.events[j].value));
 								j++;
 							}
 							start_j = j;
+							value_adjust = (semitone_offset / 
+								source_fine_pitch_range)*0.5;
 							for (; 
 								_source.events[j].ticks < next_note_ticks; 
 								j++)
 							{
-								_source.events[j].value += ((semitone_offset / 
-									source_fine_pitch_range) + 1.0) * 0.5;
+								_source.events[j].value -= value_adjust;
 							}
 							j = start_j;
 						}
@@ -381,6 +380,18 @@ public:
 				}
 			}
 		}
+	}
+	void refactor_all_pitch_bends()
+	{
+		int i;
+		for (i = 0; i < tracks.size(); i++)
+		{
+			refactor_notes_to_pitch_bend(
+				tracks[0],
+				sources[tracks[0].fine_pitch_source]
+				);
+		}
+
 	}
 	void convert_clock_base()
 	{
@@ -1047,11 +1058,14 @@ int main(int _argc, char** _argv)
 	}
 	seq.convert_clock_base();
 	seq.trim_events();
-
+	seq.source_fine_pitch_range = 36;
+	seq.refactor_all_pitch_bends();
 	
-	seq.bank = 23;
+	seq.bank = 11;
 
-	seq.tracks[0].instrument = 4;
+	seq.tracks[0].instrument = 1;
+
+
 
 	cout << seq.tracks.size() << endl;
 
