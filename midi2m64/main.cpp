@@ -276,6 +276,7 @@ public:
 	{
 		int i;
 		int j;
+		int k;
 		int start_j;
 		int ticks;
 		int next_note_ticks;
@@ -286,6 +287,7 @@ public:
 		j = 0;
 		for (i = 0; i < _track.notes.size(); i++)
 		{
+			k = 1;
 			if (_track.notes[i].type == NoteType::Note)
 			{
 				ticks = _track.notes[i].ticks;
@@ -337,22 +339,23 @@ public:
 									12.0) + 0.5) * 12;
 							semitone_offset *= signbit(semitone_shift) ? 
 								-1.0 : 1.0;
-							if (_source.events[j].ticks < ticks)
+							if (_source.events[j].ticks <= ticks)
 							{
 								_track.notes[i].note = 
-									((int)_track.notes[i].note) + 
+									((int)_track.notes[i + k - 1].note) + 
 										(int) semitone_offset;
 							}
 							else
 							{
 								_track.notes.insert(
-									_track.notes.begin() + i + 1,
+									_track.notes.begin() + i + k,
 									NoteEvent(
 										NoteType::Note,
 										_source.events[j].ticks,
 										_track.notes[i].velocity,
-										_track.notes[i].note + 
+										_track.notes[i + k - 1].note + 
 											(int) semitone_offset));
+								k++;
 							}
 							if (_source.events[j].ticks < ticks)
 							{
@@ -387,8 +390,8 @@ public:
 		for (i = 0; i < tracks.size(); i++)
 		{
 			refactor_notes_to_pitch_bend(
-				tracks[0],
-				sources[tracks[0].fine_pitch_source]
+				tracks[i],
+				sources[tracks[i].fine_pitch_source]
 				);
 		}
 
@@ -1065,9 +1068,6 @@ int main(int _argc, char** _argv)
 
 	seq.tracks[0].instrument = 1;
 
-
-
-	cout << seq.tracks.size() << endl;
 
 	press_enter_to_continue();
 
