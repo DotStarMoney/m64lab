@@ -6,6 +6,7 @@
 #include <fstream>
 #include <stdio.h>
 #include <math.h>
+#include <limits>
 using namespace std;
 
 // TODO:
@@ -30,6 +31,165 @@ unsigned short bit_mask_from_value[16] =
 short rev_short(short _x)
 {
 	return ((unsigned short)_x >> 8) | (_x << 8);
+}
+
+void opt_avg_intervals(
+	float* _data,
+	size_t _data_n,
+	size_t _desired_n,
+	size_t* _res
+)
+{
+	float** L;
+	double** best;
+	double global_best;
+	double this_best;
+	size_t* start;
+	size_t* start_best;
+	double* total_err;
+	double avg;
+	double err_sq;
+	double this_err;
+	double total;
+	int i;
+	int q;
+	int k;
+	int start_base;
+	bool proceed_flag;
+	bool escape_flag;
+
+	_desired_n++;
+
+	L = (float**)malloc(sizeof(float*)*(_data_n - 1));
+	for (i = 0; i < _data_n; i++)
+	{
+		L[i] = (float*)malloc(sizeof(float)*(_data_n - i));
+		for (q = 0; q < _data_n; q++)
+		{
+			total = 0;
+			err_sq = 0;
+			for (k = i; k <= q; k++)
+			{
+				total += _data[k];
+			}
+			avg = total / (q - i + 1.0);
+			for (k = i; k <= q; k++)
+			{
+				this_err = _data[k] - avg;
+				err_sq = this_err*this_err;
+			}
+			L[i][q - i] = err_sq;
+		}
+	}
+	
+	best = (double**)malloc(sizeof(double*)*(_desired_n - 3));
+	for (i = 0; i < _desired_n - 3; i++)
+	{
+		best[i] = (double*)malloc(sizeof(double)*_data_n);
+		for (q = 0; q < _data_n; q++)
+		{
+			best[i][q] = -1.0;
+		}
+	}
+	global_best = FLT_MAX;
+	start_best = _res;
+	for (i = 0; i < _desired_n - 1; i++)
+	{
+		start_best[i] = i;
+	}
+	start = (size_t*)malloc(sizeof(size_t)*(_desired_n - 1));
+	total_err = (double*)malloc(sizeof(double)*(_desired_n - 1));
+
+	for (q = 0; q <= (_data_n - _desired_n); q++)
+	{
+		start[0] = q;
+		total_err[0] = L[0][start[0]];
+		start[1] = start[0] + 1;
+		i = 1;
+		do
+		{
+			proceed_flag = false;
+			if (i < _desired_n - 2)
+			{
+				start_base = start[i - 1] + 1;
+				total_err[i] = total_err[i - 1] +
+					L[start_base][start[i] - start_base];
+				this_best = best[i - 1][start[i] + 1];
+				if ((this_best = -1.0) && (total_err[i] < global_best))
+				{
+					i += 1;
+					if (i == (_desired_n - 2))
+					{
+						start[i] = _data_n - 1;
+					}
+					else
+					{
+						start[i] = start[i - 1] + 1;
+					}
+				}
+				else
+				{
+					if ((this_best != -1.0) && ((this_best +
+						total_err[i]) < global_best))
+					{
+						global_best = this_best + total_err[i];
+						for (k = 0; k < _desired_n - 1; k++)
+						{
+							start_best[k] = start[k];
+						}
+					}
+					proceed_flag = true;
+				}
+			}
+			else
+			{
+				start_base = start[i - 1] + 1;
+				total_err[i] = total_err[i - 1] +
+					L[start_base][start[i] - start_base];
+				if (total_err[i] < global_best)
+				{
+					global_best = total_err[i];
+					for (k = 0; k < _desired_n - 1; k++)
+					{
+						start_best[k] = start[k];
+					}
+				}
+				proceed_flag = true;
+			}
+			escape_flag = false;
+			if (proceed_flag)
+			{
+				do
+				{
+					start[i]++;
+					if (start[i] > (_data_n - _desired_n + i + 1))
+					{
+						if (i == 1)
+						{
+							escape_flag = true;
+						}
+						else
+						{
+							i--;
+							best[i - 1][start[i] + 1] = global_best - 
+								total_err[i];
+						}
+					}
+					else
+					{
+						break;
+					}
+				} while (!escape_flag);
+			}
+		} while (!escape_flag);
+	}
+
+	free(total_err);
+	free(start);
+	for (i = 0; i < _desired_n - 3; free(best[i++]));
+	free(best);
+	for (i = 0; i < _data_n; free(L[i++]));
+	free(L);
 }
 
 enum class ControllerSourceType
@@ -95,6 +255,7 @@ public:
 		controller_number = -1;
 		owner_track_name = "";
 	}
+
 	void convert_clock_base(int _from_base, int _total_ticks)
 	{
 		float divisor;
@@ -271,6 +432,32 @@ public:
 				if (j < 0) break;
 			}
 		}
+	}
+	void optimize(Track& _track, ControllerSource& _source, float _percentage)
+	{
+		int i;
+		for (i = 0; i < _track.notes.size(); i++)
+		{
+			
+		}
+
+
+
+
+
+		// for all track events:
+		//
+		// remove non-conincidental events
+		//    find range of notes considered a group (no gaps greater than certain length)
+		//    any pre-events should occur on trigger of first note of group (these steps make self contained)
+		//    if range sufficicently "event dense", and percentage != 1
+		//		 convert to array
+		//		 pass array to opt-avg
+		//		 find opt-avg based on percentage*num_events
+		//		 convert opt-avg output to event list
+		//		 replace range with new event list
+		// delete non-contributing events
+		// delete duplicated events
 	}
 	void refactor_notes_to_pitch_bend(Track& _track, ControllerSource& _source)
 	{
@@ -845,7 +1032,6 @@ int get_source_index(vector<ControllerSource>& _sources,
 		_sources.push_back(ControllerSource());
 		source_index = _sources.size() - 1;
 		_sources[source_index].type = _type;
-		_sources[source_index].owner_track_id = _track;
 		_sources[source_index].controller_number = _controller_number;
 	}
 	return source_index;
@@ -1058,9 +1244,27 @@ int main(int _argc, char** _argv)
 			seq.tempo_source = i;
 			break;
 		}
+		seq.sources[i].owner_track_id = -1;
+	}
+	for (i = 0; i < seq.tracks.size(); i++)
+	{
+		if (seq.tracks[i].fine_pitch_source != PARAM_SOURCE_NONE)
+		{
+			seq.sources[seq.tracks[i].fine_pitch_source].owner_track_id = i;
+		}
+		if (seq.tracks[i].pan_source != PARAM_SOURCE_NONE)
+		{
+			seq.sources[seq.tracks[i].pan_source].owner_track_id = i;
+		}
+		if (seq.tracks[i].volume_source != PARAM_SOURCE_NONE)
+		{
+			seq.sources[seq.tracks[i].volume_source].owner_track_id = i;
+		}
 	}
 	seq.convert_clock_base();
 	seq.trim_events();
+
+	/////////////////////////////////////
 	seq.source_fine_pitch_range = 36;
 	seq.refactor_all_pitch_bends();
 	
@@ -1070,7 +1274,7 @@ int main(int _argc, char** _argv)
 
 
 	press_enter_to_continue();
-
+	//////////////////////////////////////
 
 	m64.clear();
 	m64 = seq.create_m64();
