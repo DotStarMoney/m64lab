@@ -11,16 +11,18 @@ using namespace std;
 
 // TODO:
 //     + Add event compression
-//     + Determine root pitch for note offset (NOTE_BIAS)
 //     + Determine m64 volume scaling, definitely sounds wrong
 //     + Build midi parsing into seq class
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "pitchtest.mid"
+#define DEBUG_MIDI_FILE "C5.mid"
 #endif
 
-#define NOTE_BIAS 24
+#define NOTE_BIAS 21
+
+#define NOTE_GROUP_MAX_GAP 288
+#define MIN_AVG_GAP 2.0
 
 unsigned short bit_mask_from_value[16] =
 	{	0x0001, 0x0003, 0x0007, 0x000F,
@@ -436,9 +438,209 @@ public:
 	void optimize(Track& _track, ControllerSource& _source, float _percentage)
 	{
 		int i;
-		for (i = 0; i < _track.notes.size(); i++)
+		int q;
+		int start_event;
+		int end_event;
+		size_t next_event_ticks;
+		int k;
+		int j;
+		int start_j;
+		int this_tick;
+		int next_ticks;
+		int ticks;
+		int start_ticks;
+		size_t desired_count;
+		double avg_gap;
+		double value_avg;
+		bool has_run;
+		bool reached_end;
+		bool has_events_flag;
+		vector<float> v_data;
+		vector<size_t> v_res;
+		vector<float> v_avg;
+		vector<ControllerEvent> new_events;
+		has_run = false;
+		i = 0;
+		q = 0;
+		while (i < _track.notes.size())
 		{
-			
+			if ((_track.notes[i].type == NoteType::Note) &&
+				(i != (_track.notes.size() - 1)))
+			{
+				if (!has_run)
+				{
+					start_ticks = _track.notes[i].ticks;
+					has_run = true;
+				}
+			}
+			else
+			{
+				if (has_run)
+				{
+					ticks = _track.notes[i].ticks;
+					if (i == (_track.notes.size() - 1))
+					{
+						next_ticks = total_ticks;
+						reached_end = true;
+					}
+					else
+					{
+						next_ticks = _track.notes[i + 1].ticks;
+						reached_end = false;
+					}
+					if (((next_ticks - ticks + 1) >
+						NOTE_GROUP_MAX_GAP) || reached_end)
+					{
+						if (_source.events[q].ticks < start_ticks)
+						{
+							has_events_flag = false;
+							for (; q < _source.events.size(); q++)
+							{
+								if (_source.events[q].ticks > start_ticks)
+								{
+									q--;
+									has_events_flag = true;
+									break;
+								}
+							}
+							if (!has_events_flag) q--;
+							_source.events.insert(
+								_source.events.begin() + q + 1,
+								ControllerEvent(
+									start_ticks,
+									_source.events[q].value
+									)
+								);
+							q++;
+							has_events_flag = true;
+						}
+						else
+						{
+							if (_source.events[q].ticks < ticks)
+							{
+								has_events_flag = true;
+							}
+							else
+							{
+								has_events_flag = false;
+							}
+						}
+						if (has_events_flag && _percentage < 1.0)
+						{
+							for (k = q; k < _source.events.size(); k++)
+							{
+								if (_source.events[k].ticks >= ticks)
+								{
+									k--;
+									break;
+								}
+							}
+							if (k < (_source.events.size() - 1))
+							{
+								if (_source.events[k + 1].ticks != ticks)
+								{
+									_source.events.insert(
+										_source.events.begin() + k + 1,
+										ControllerEvent(
+											ticks,
+											_source.events[k].value
+										)
+									);
+								}
+							}
+							start_event = q;
+							end_event = k + 1;
+							avg_gap = 0;
+							for (k = start_event;
+								k < end_event;
+								k++)
+							{
+								if (k == (_source.events.size() - 1))
+								{
+									next_event_ticks = total_ticks;
+								}
+								else
+								{
+									next_event_ticks = 
+										_source.events[k + 1].ticks;
+								}
+								avg_gap += 1.0 /
+									(double)(_source.events[k + 1].ticks -
+										_source.events[k].ticks);
+							}
+							avg_gap = (double)(end_event - start_event)/ 
+								avg_gap;
+							if (avg_gap < MIN_AVG_GAP)
+							{
+								v_data.clear();
+								v_data.resize(ticks - start_ticks + 1);
+								for (k = start_event;
+									k < end_event;
+									k++)
+								{
+									if (k == (_source.events.size() - 1))
+									{
+										next_event_ticks = total_ticks;
+									}
+									else
+									{
+										next_event_ticks =
+											_source.events[k + 1].ticks;
+									}
+									for (this_tick = _source.events[k].ticks;
+										this_tick < next_event_ticks;
+										this_tick++)
+									{
+										v_data[this_tick - start_ticks] =
+											_source.events[k].value;
+									}
+								}
+								desired_count = ceil((float)v_data.size()*
+									_percentage);
+								
+								/*
+								v_res.clear();
+								v_res.resize(desired_count);
+								opt_avg_intervals(
+										&v_data[0],
+										v_data.size(),
+										desired_count,
+										&v_res[0]
+									);
+								new_events.clear();
+								j = 0;
+								for (k = 0; k < desired_count - 1; k++)
+								{
+									start_j = j;
+									value_avg = 0;
+									for (; j <= v_res[k]; j++)
+									{
+										value_avg += v_data[j];
+									}
+									value_avg /= (v_res[k] - start_j + 1);
+									new_events.push_back(
+										ControllerEvent(
+												start_j + start_ticks,
+												value_avg
+											)
+									);
+								}
+
+
+
+							}
+						}
+						has_run = false;
+					}
+					*/
+							}
+
+						}
+					}
+					
+				}
+			}
+			i++;
 		}
 
 
@@ -450,7 +652,7 @@ public:
 		// remove non-conincidental events
 		//    find range of notes considered a group (no gaps greater than certain length)
 		//    any pre-events should occur on trigger of first note of group (these steps make self contained)
-		//    if range sufficicently "event dense", and percentage != 1
+		//    if range sufficicently "has dense events", and percentage != 1
 		//		 convert to array
 		//		 pass array to opt-avg
 		//		 find opt-avg based on percentage*num_events
@@ -556,15 +758,19 @@ public:
 							start_j = j;
 							value_adjust = (semitone_offset / 
 								source_fine_pitch_range)*0.5;
-							for (; 
-								_source.events[j].ticks < next_note_ticks; 
-								j++)
+							while (j < _source.events.size())
 							{
+								if (_source.events[j].ticks < next_note_ticks)
+								{
+									break;
+								}
 								_source.events[j].value -= value_adjust;
+								j++;
 							}
 							j = start_j;
 						}
 						j++;
+						if (j >= _source.events.size()) break;
 					} while (_source.events[j].ticks < next_note_ticks);
 					j--;
 				}
@@ -1265,15 +1471,18 @@ int main(int _argc, char** _argv)
 	seq.trim_events();
 
 	/////////////////////////////////////
-	seq.source_fine_pitch_range = 36;
-	seq.refactor_all_pitch_bends();
+	//seq.source_fine_pitch_range = 36;
+	//seq.refactor_all_pitch_bends();
 	
-	seq.bank = 11;
 
-	seq.tracks[0].instrument = 1;
+	//seq.optimize(seq.tracks[0], seq.sources[seq.tracks[0].fine_pitch_source], 0.5);
+
+	seq.bank = 0x1E;
+
+	seq.tracks[0].instrument = 0;
 
 
-	press_enter_to_continue();
+	//press_enter_to_continue();
 	//////////////////////////////////////
 
 	m64.clear();
