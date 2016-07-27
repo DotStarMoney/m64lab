@@ -7,16 +7,16 @@
 #include <stdio.h>
 #include <math.h>
 #include <limits>
+#include <stdexcept>
 using namespace std;
 
 // TODO:
-//     + Add event compression
 //     + Determine m64 volume scaling, definitely sounds wrong
 //     + Build midi parsing into seq class
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "C5.mid"
+#define DEBUG_MIDI_FILE "LastImpactElectro.mid"
 #endif
 
 #define NOTE_BIAS 21
@@ -35,6 +35,9 @@ short rev_short(short _x)
 	return ((unsigned short)_x >> 8) | (_x << 8);
 }
 
+
+// Technically impressive, but needs to be built in to event optimization,
+//    can't use alone
 void opt_avg_intervals(
 	float* _data,
 	size_t _data_n,
@@ -435,231 +438,109 @@ public:
 			}
 		}
 	}
-	void optimize(Track& _track, ControllerSource& _source, float _percentage)
+	void optimize(Track& _track, ControllerSource& _source)
 	{
-		int i;
-		int q;
-		int start_event;
-		int end_event;
-		size_t next_event_ticks;
-		int k;
-		int j;
-		int start_j;
-		int this_tick;
+		int cur_event;
+		int this_note;
+		int this_ticks;
 		int next_ticks;
-		int ticks;
-		int start_ticks;
-		size_t desired_count;
-		double avg_gap;
-		double value_avg;
-		bool has_run;
-		bool reached_end;
-		bool has_events_flag;
-		vector<float> v_data;
-		vector<size_t> v_res;
-		vector<float> v_avg;
-		vector<ControllerEvent> new_events;
-		has_run = false;
-		i = 0;
-		q = 0;
-		while (i < _track.notes.size())
+		int last_rest_ticks;
+		float last_value;
+		NoteType last_type;
+
+		this_note = 0;
+		last_type = NoteType::Note;
+		cur_event = 0; 
+		while(cur_event < _source.events.size())
 		{
-			if ((_track.notes[i].type == NoteType::Note) &&
-				(i != (_track.notes.size() - 1)))
+			while (_track.notes[this_note].ticks <=
+				_source.events[cur_event].ticks)
 			{
-				if (!has_run)
+				this_note++;
+				if (this_note >= _track.notes.size()) break;
+			}
+			this_note--;
+			this_ticks = _track.notes[this_note].ticks;
+			if ((_track.notes[this_note].type == NoteType::Rest) ||
+				((this_ticks == _source.events[cur_event].ticks) && 
+					(_track.notes[this_note].type == NoteType::Note)))
+			{
+				if (last_type == NoteType::Rest) 
 				{
-					start_ticks = _track.notes[i].ticks;
-					has_run = true;
+					_source.events.erase(_source.events.begin() + 
+						cur_event - 1);
+				}
+				else
+				{
+					cur_event++;
 				}
 			}
 			else
 			{
-				if (has_run)
-				{
-					ticks = _track.notes[i].ticks;
-					if (i == (_track.notes.size() - 1))
-					{
-						next_ticks = total_ticks;
-						reached_end = true;
-					}
-					else
-					{
-						next_ticks = _track.notes[i + 1].ticks;
-						reached_end = false;
-					}
-					if (((next_ticks - ticks + 1) >
-						NOTE_GROUP_MAX_GAP) || reached_end)
-					{
-						if (_source.events[q].ticks < start_ticks)
-						{
-							has_events_flag = false;
-							for (; q < _source.events.size(); q++)
-							{
-								if (_source.events[q].ticks > start_ticks)
-								{
-									q--;
-									has_events_flag = true;
-									break;
-								}
-							}
-							if (!has_events_flag) q--;
-							_source.events.insert(
-								_source.events.begin() + q + 1,
-								ControllerEvent(
-									start_ticks,
-									_source.events[q].value
-									)
-								);
-							q++;
-							has_events_flag = true;
-						}
-						else
-						{
-							if (_source.events[q].ticks < ticks)
-							{
-								has_events_flag = true;
-							}
-							else
-							{
-								has_events_flag = false;
-							}
-						}
-						if (has_events_flag && _percentage < 1.0)
-						{
-							for (k = q; k < _source.events.size(); k++)
-							{
-								if (_source.events[k].ticks >= ticks)
-								{
-									k--;
-									break;
-								}
-							}
-							if (k < (_source.events.size() - 1))
-							{
-								if (_source.events[k + 1].ticks != ticks)
-								{
-									_source.events.insert(
-										_source.events.begin() + k + 1,
-										ControllerEvent(
-											ticks,
-											_source.events[k].value
-										)
-									);
-								}
-							}
-							start_event = q;
-							end_event = k + 1;
-							avg_gap = 0;
-							for (k = start_event;
-								k < end_event;
-								k++)
-							{
-								if (k == (_source.events.size() - 1))
-								{
-									next_event_ticks = total_ticks;
-								}
-								else
-								{
-									next_event_ticks = 
-										_source.events[k + 1].ticks;
-								}
-								avg_gap += 1.0 /
-									(double)(_source.events[k + 1].ticks -
-										_source.events[k].ticks);
-							}
-							avg_gap = (double)(end_event - start_event)/ 
-								avg_gap;
-							if (avg_gap < MIN_AVG_GAP)
-							{
-								v_data.clear();
-								v_data.resize(ticks - start_ticks + 1);
-								for (k = start_event;
-									k < end_event;
-									k++)
-								{
-									if (k == (_source.events.size() - 1))
-									{
-										next_event_ticks = total_ticks;
-									}
-									else
-									{
-										next_event_ticks =
-											_source.events[k + 1].ticks;
-									}
-									for (this_tick = _source.events[k].ticks;
-										this_tick < next_event_ticks;
-										this_tick++)
-									{
-										v_data[this_tick - start_ticks] =
-											_source.events[k].value;
-									}
-								}
-								desired_count = ceil((float)v_data.size()*
-									_percentage);
-								
-								/*
-								v_res.clear();
-								v_res.resize(desired_count);
-								opt_avg_intervals(
-										&v_data[0],
-										v_data.size(),
-										desired_count,
-										&v_res[0]
-									);
-								new_events.clear();
-								j = 0;
-								for (k = 0; k < desired_count - 1; k++)
-								{
-									start_j = j;
-									value_avg = 0;
-									for (; j <= v_res[k]; j++)
-									{
-										value_avg += v_data[j];
-									}
-									value_avg /= (v_res[k] - start_j + 1);
-									new_events.push_back(
-										ControllerEvent(
-												start_j + start_ticks,
-												value_avg
-											)
-									);
-								}
-
-
-
-							}
-						}
-						has_run = false;
-					}
-					*/
-							}
-
-						}
-					}
-					
-				}
+				cur_event++;
 			}
-			i++;
+			last_type = _track.notes[this_note].type;
+		}
+		cur_event--;
+		if (_track.notes[_track.notes.size() - 1].type != NoteType::Note)
+		{
+			last_rest_ticks = _track.notes[_track.notes.size() - 1].ticks;
+			if (_source.events[cur_event].ticks >= last_rest_ticks)
+			{
+				_source.events.pop_back();
+			}
 		}
 
-
-
-
-
-		// for all track events:
-		//
-		// remove non-conincidental events
-		//    find range of notes considered a group (no gaps greater than certain length)
-		//    any pre-events should occur on trigger of first note of group (these steps make self contained)
-		//    if range sufficicently "has dense events", and percentage != 1
-		//		 convert to array
-		//		 pass array to opt-avg
-		//		 find opt-avg based on percentage*num_events
-		//		 convert opt-avg output to event list
-		//		 replace range with new event list
-		// delete non-contributing events
-		// delete duplicated events
+		last_value = _source.events[0].value;
+		cur_event = 1;
+		while (cur_event < _source.events.size())
+		{
+			if (_source.events[cur_event].value == last_value)
+			{
+				_source.events.erase(_source.events.begin() + cur_event);
+			}
+			else
+			{
+				last_value = _source.events[cur_event].value;
+				cur_event++;
+			}
+		}
+	}
+	void optimize_track_sources(int _track_number)
+	{
+		if (tracks[_track_number].echo_source != PARAM_SOURCE_NONE)
+		{
+			optimize(tracks[_track_number], 
+				sources[tracks[_track_number].echo_source]);
+		}
+		if (tracks[_track_number].fine_pitch_source != PARAM_SOURCE_NONE)
+		{
+			optimize(tracks[_track_number], 
+				sources[tracks[_track_number].fine_pitch_source]);
+		}
+		if (tracks[_track_number].pan_source != PARAM_SOURCE_NONE)
+		{
+			optimize(tracks[_track_number], 
+				sources[tracks[_track_number].pan_source]);
+		}
+		if (tracks[_track_number].vibrato_source != PARAM_SOURCE_NONE)
+		{
+			optimize(tracks[_track_number], 
+				sources[tracks[_track_number].vibrato_source]);
+		}
+		if (tracks[_track_number].volume_source != PARAM_SOURCE_NONE)
+		{
+			optimize(tracks[_track_number], 
+				sources[tracks[_track_number].volume_source]);
+		}
+	}
+	void optimize_all()
+	{
+		int i;
+		for (i = 0; i < tracks.size(); i++)
+		{
+			optimize_track_sources(i);
+		}
 	}
 	void refactor_notes_to_pitch_bend(Track& _track, ControllerSource& _source)
 	{
@@ -782,10 +663,13 @@ public:
 		int i;
 		for (i = 0; i < tracks.size(); i++)
 		{
-			refactor_notes_to_pitch_bend(
-				tracks[i],
-				sources[tracks[i].fine_pitch_source]
+			if (tracks[i].fine_pitch_source != PARAM_SOURCE_NONE)
+			{
+				refactor_notes_to_pitch_bend(
+					tracks[i],
+					sources[tracks[i].fine_pitch_source]
 				);
+			}
 		}
 
 	}
@@ -867,6 +751,7 @@ public:
 		float vibrato_scaling;
 		float note_vel;
 		bool delta_time_event;
+		int event_prev_values[256];
 
 		fine_pitch_scaling = source_fine_pitch_range / 12.0;
 		vibrato_scaling = source_vibrato_range / 12.0;
@@ -999,6 +884,7 @@ public:
 						128, 0) // NO CLUE WHAT THIS NUMBER ACTUALLY IS
 					);
 			}
+			for (j = 0; j < 256; event_prev_values[j++] = -1);
 			last_tick = 0;
 			delta_time_event = false;
 			while (!events.empty())
@@ -1022,21 +908,26 @@ public:
 				val_int = (int)(value * events[near_event].multiplier +
 					events[near_event].offset);
 
-				if (tick != last_tick)
-				{
-					delta_time_event = true;
-					ADD(0xFD);
-					ADD_V(tick - last_tick);
+				if (event_prev_values[events[near_event].event_code] != 
+					val_int) {
+					if (tick != last_tick)
+					{
+						delta_time_event = true;
+						ADD(0xFD);
+						ADD_V(tick - last_tick);
+					}
+					ADD(events[near_event].event_code);
+					ADD(val_int);
+					last_tick = tick;
 				}
-				ADD(events[near_event].event_code);
-				ADD(val_int);
+
+				event_prev_values[events[near_event].event_code] = val_int;
 				events[near_event].cur_event++;
 				if (events[near_event].event_source->events.size() ==
 					events[near_event].cur_event)
 				{
 					events.erase(events.begin() + near_event);
 				}
-				last_tick = tick;
 			} 
 			if (!delta_time_event)
 			{
@@ -1203,6 +1094,26 @@ public:
 			}
 		}
 		return m64;
+	}
+	Track& get_track_by_name(const string& _name)
+	{
+		int i;
+		for (i = 0; i < sources.size(); i++)
+		{
+			if (tracks[i].name.compare(_name) == 0)
+			{
+				return tracks[i];
+			}
+		}
+		throw std::invalid_argument("No track of name \"" + _name + "\" exists.");
+	}
+	int new_fixed_source(float _value)
+	{
+		ControllerSource new_source;
+		new_source.type = ControllerSourceType::UserFixed;
+		new_source.events.push_back(ControllerEvent(0, _value));
+		sources.push_back(new_source);
+		return sources.size() - 1;
 	}
 	int tempo_source; 
 	float source_vibrato_range;   
@@ -1470,21 +1381,34 @@ int main(int _argc, char** _argv)
 	seq.convert_clock_base();
 	seq.trim_events();
 
-	/////////////////////////////////////
-	//seq.source_fine_pitch_range = 36;
-	//seq.refactor_all_pitch_bends();
+
+	///////////////////////////////////////////////////////////////////////////////////
+	seq.get_track_by_name("Pad 1").fine_pitch_source = 
+		seq.get_track_by_name("CrunchyLoop").fine_pitch_source;
+	seq.get_track_by_name("CrunchyLoop").fine_pitch_source = PARAM_SOURCE_NONE;
+
+	seq.get_track_by_name("Pad 2").fine_pitch_source =
+		seq.get_track_by_name("EStreamLoop").fine_pitch_source;
+	seq.get_track_by_name("EStreamLoop").fine_pitch_source = PARAM_SOURCE_NONE;
+
+	seq.get_track_by_name("CheddarCheese L").fine_pitch_source =
+		seq.get_track_by_name("HitEffects").fine_pitch_source;
+	seq.get_track_by_name("CheddarCheese R").fine_pitch_source =
+		seq.get_track_by_name("HitEffects").fine_pitch_source;
+	seq.get_track_by_name("HitEffects").fine_pitch_source = PARAM_SOURCE_NONE;
+
+	seq.get_track_by_name("DistBell").echo_source = seq.new_fixed_source(1.0);
+	seq.get_track_by_name("DistBell Echo").echo_source = seq.new_fixed_source(1.0);
+	seq.get_track_by_name("Arpegginator").echo_source = seq.new_fixed_source(1.0);
+
+	seq.get_track_by_name("Battery").pan_source = PARAM_SOURCE_NONE;
+
+	seq.source_fine_pitch_range = 48;
+	seq.refactor_all_pitch_bends();
 	
-
-	//seq.optimize(seq.tracks[0], seq.sources[seq.tracks[0].fine_pitch_source], 0.5);
-
-	seq.bank = 0x1E;
-
-	seq.tracks[0].instrument = 0;
-
-
-	//press_enter_to_continue();
-	//////////////////////////////////////
-
+	seq.optimize_all();
+	///////////////////////////////////////////////////////////////////////////////////
+	
 	m64.clear();
 	m64 = seq.create_m64();
 	
