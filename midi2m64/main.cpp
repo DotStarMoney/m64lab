@@ -36,6 +36,29 @@ short rev_short(short _x)
 }
 
 
+class NoteRemapping
+{
+public:
+	NoteRemapping()
+	{
+		int i;
+		for (i = 0; i < 256; i++)
+		{
+			mapping[i] = i;
+		}
+	}
+	int& operator[](unsigned char _index)
+	{
+		return mapping[_index];
+	}
+	const int& operator[](unsigned char _index) const
+	{
+		return mapping[_index];
+	}
+private:
+	int mapping[256];
+};
+
 // Technically impressive, but needs to be built in to event optimization,
 //    can't use alone
 void opt_avg_intervals(
@@ -349,6 +372,14 @@ public:
 		vibrato_source = PARAM_SOURCE_NONE;
 		instrument = 0;
 		velocity_multiplier = 1.0;
+	}
+	void remap(NoteRemapping& _mapping)
+	{
+		int i;
+		for (i = 0; i < notes.size(); i++)
+		{
+			notes[i].note = (unsigned char)_mapping[notes[i].note];
+		}
 	}
 	void convert_clock_base(int _from_base, int _total_ticks)
 	{
@@ -1181,6 +1212,7 @@ int main(int _argc, char** _argv)
 	vector<uchar> m64;
 	fstream output;
 	MidiFile midifile;
+
 #ifdef _NDEBUG
 	Options options;
 #endif
