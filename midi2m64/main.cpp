@@ -11,8 +11,10 @@
 using namespace std;
 
 // TODO:
-//     + Fix optimize events: remove-coincidental events should be based on "is next in series of rests" not "next event is a rest" 
-//     + Debug pitch bend refactoring
+//     + Find out why notes are not being played at correct pitches
+//     + check if some pitch bend events are an issue (pad 1 and pad 2 slight bend), also fix issue where 
+//           pitch bends aren't being spread to multiple notes
+//     + Find out why single sources are being deleted
 //     + Determine m64 volume scaling, definitely sounds wrong
 //     + Build midi parsing into seq class
 //     + Add UI  
@@ -480,10 +482,10 @@ public:
 	{
 		int cur_event;
 		int this_note;
-		int this_ticks;
 		int next_ticks;
 		int last_rest_ticks;
 		float last_value;
+		bool passed_note;
 		NoteType last_type;
 
 		
@@ -493,17 +495,19 @@ public:
 		
 		while(cur_event < _source.events.size())
 		{
+			passed_note = false;
 			while (_track.notes[this_note].ticks <=
 				_source.events[cur_event].ticks)
 			{
+				if (_track.notes[this_note].type == NoteType::Note)
+				{
+					passed_note = true;
+				}
 				this_note++;
 				if (this_note >= _track.notes.size()) break;
 			}
 			this_note--;
-			this_ticks = _track.notes[this_note].ticks;
-			if ((_track.notes[this_note].type == NoteType::Rest) ||
-				((this_ticks == _source.events[cur_event].ticks) && 
-					(_track.notes[this_note].type == NoteType::Note)))
+			if (!passed_note)
 			{
 				if (last_type == NoteType::Rest) 
 				{
@@ -682,7 +686,7 @@ public:
 								source_fine_pitch_range)*0.5;
 							while (j < _source.events.size())
 							{
-								if (_source.events[j].ticks < next_note_ticks)
+								if (_source.events[j].ticks >= next_note_ticks)
 								{
 									break;
 								}
@@ -834,7 +838,13 @@ public:
 				ADD((uchar)(sources[tempo_source].get(i) * 255.0));
 				last_tick = tick;
 			}
+			if (last_tick != total_ticks)
+			{
+				ADD(0xFD);
+				ADD_V(total_ticks - last_tick);
+			}
 		}
+
 		ADD(0xFF);
 
 		for (i = 0; i < tracks.size(); i++)
@@ -1428,23 +1438,36 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("Pad 1").fine_pitch_source = 
 		seq.get_track_by_name("CrunchyLoop").fine_pitch_source;
 	seq.get_track_by_name("CrunchyLoop").fine_pitch_source = PARAM_SOURCE_NONE;
+	seq.get_track_by_name("Pad 1").echo_source = seq.new_fixed_source(1.0);
+
 
 	seq.get_track_by_name("Pad 2").fine_pitch_source =
 		seq.get_track_by_name("EStreamLoop").fine_pitch_source;
 	seq.get_track_by_name("EStreamLoop").fine_pitch_source = PARAM_SOURCE_NONE;
-	seq.get_track_by_name("Pad 2").pan_source = seq.new_fixed_source(1.0 - 0.17);
+	seq.get_track_by_name("Pad 2").pan_source = 
+		seq.new_fixed_source(1.0 - 0.17);
+	seq.get_track_by_name("Pad 2").echo_source = seq.new_fixed_source(1.0);
 
 	seq.get_track_by_name("CheddarCheese L").fine_pitch_source =
 		seq.get_track_by_name("HitEffects").fine_pitch_source;
+	seq.get_track_by_name("CheddarCheese L").pan_source =
+		seq.new_fixed_source(0.0);
 	seq.get_track_by_name("CheddarCheese R").fine_pitch_source =
 		seq.get_track_by_name("HitEffects").fine_pitch_source;
+	seq.get_track_by_name("CheddarCheese R").pan_source =
+		seq.new_fixed_source(1.0);
 	seq.get_track_by_name("HitEffects").fine_pitch_source = PARAM_SOURCE_NONE;
 
-	seq.get_track_by_name("DistBell").echo_source = seq.new_fixed_source(1.0);
-	seq.get_track_by_name("DistBell Echo").echo_source = seq.new_fixed_source(1.0);
-	seq.get_track_by_name("Arpegginator").echo_source = seq.new_fixed_source(1.0);
 
-	//seq.get_track_by_name("Battery").pan_source = PARAM_SOURCE_NONE;
+	seq.get_track_by_name("DistBell").echo_source = seq.new_fixed_source(1.0);
+	seq.get_track_by_name("DistBell Echo").echo_source = 
+		seq.new_fixed_source(1.0);
+	seq.get_track_by_name("Arpegginator").echo_source =
+		seq.new_fixed_source(1.0);
+
+
+
+
 	seq.get_track_by_name("Battery").instrument = PERC_BANK_INSTRUMENT_N;
 	
 	seq.bank = 0x25;
@@ -1458,10 +1481,11 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("Battery").remap(drums);
 
 	
+	
 	i = 0;
 	while(i < seq.tracks.size())
 	{
-		if ((seq.tracks[i].name != "Pad 1"))// && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "Battery"))
+		if ((seq.tracks[i].name != "Pad 1") && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "CheddarCheese R"))
 		{
 			seq.tracks.erase(seq.tracks.begin() + i);
 		}
@@ -1471,16 +1495,25 @@ int main(int _argc, char** _argv)
 		}
 	}
 	
-	seq.get_track_by_name("Pad 1").volume_source = PARAM_SOURCE_NONE;
-	seq.get_track_by_name("Pad 1").fine_pitch_source = PARAM_SOURCE_NONE;
-
 
 	seq.get_track_by_name("Pad 1").instrument = 8;
-	//seq.get_track_by_name("Pad 2").instrument = 9;
+	seq.get_track_by_name("Pad 2").instrument = 9;
 
 
-	//seq.source_fine_pitch_range = 48;
-	//seq.refactor_all_pitch_bends();
+	//seq.get_track_by_name("CheddarCheese L").instrument = 0;
+	seq.get_track_by_name("CheddarCheese R").instrument = 1;
+
+	Track& tr = seq.get_track_by_name("CheddarCheese R");
+	for (i = 0; i < tr.notes.size(); i++)
+	{
+		cout << hex << (int) tr.notes[i].note << endl;
+		press_enter_to_continue();
+
+	}
+
+
+	seq.source_fine_pitch_range = 48;
+	seq.refactor_all_pitch_bends();
 	
 	seq.optimize_all();
 	///////////////////////////////////////////////////////////////////////////////////
