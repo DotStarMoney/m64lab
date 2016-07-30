@@ -11,10 +11,10 @@
 using namespace std;
 
 // TODO:
-//     + Find out why notes are not being played at correct pitches
 //     + check if some pitch bend events are an issue (pad 1 and pad 2 slight bend), also fix issue where 
 //           pitch bends aren't being spread to multiple notes
 //     + Find out why single sources are being deleted
+//     + Find ASDR settings with no delay or release
 //     + Determine m64 volume scaling, definitely sounds wrong
 //     + Build midi parsing into seq class
 //     + Add UI  
@@ -380,6 +380,14 @@ public:
 		velocity_multiplier = 1.0;
 		map_directly = false;
 	}
+	void transpose(char _amt)
+	{
+		int i;
+		for (i = 0; i < notes.size(); i++)
+		{
+			notes[i].note = notes[i].note + _amt;
+		}
+	}
 	void remap(NoteRemapping& _mapping)
 	{
 		int i;
@@ -482,7 +490,6 @@ public:
 	{
 		int cur_event;
 		int this_note;
-		int next_ticks;
 		int last_rest_ticks;
 		float last_value;
 		bool passed_note;
@@ -1485,7 +1492,7 @@ int main(int _argc, char** _argv)
 	i = 0;
 	while(i < seq.tracks.size())
 	{
-		if ((seq.tracks[i].name != "Pad 1") && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "CheddarCheese R"))
+		if ((seq.tracks[i].name != "CheddarCheese R") && (seq.tracks[i].name != "CheddarCheese L") && (seq.tracks[i].name != "Pad 1") && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "Battery"))
 		{
 			seq.tracks.erase(seq.tracks.begin() + i);
 		}
@@ -1500,20 +1507,17 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("Pad 2").instrument = 9;
 
 
-	//seq.get_track_by_name("CheddarCheese L").instrument = 0;
+	seq.get_track_by_name("CheddarCheese L").instrument = 0;
 	seq.get_track_by_name("CheddarCheese R").instrument = 1;
 
-	Track& tr = seq.get_track_by_name("CheddarCheese R");
-	for (i = 0; i < tr.notes.size(); i++)
-	{
-		cout << hex << (int) tr.notes[i].note << endl;
-		press_enter_to_continue();
 
-	}
-
+	
 
 	seq.source_fine_pitch_range = 48;
 	seq.refactor_all_pitch_bends();
+
+
+	
 	
 	seq.optimize_all();
 	///////////////////////////////////////////////////////////////////////////////////
