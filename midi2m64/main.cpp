@@ -819,7 +819,6 @@ public:
 		}
 		else
 		{
-			delta_time_event = false;
 			last_tick = 0;
 			for (i = 0; 
 				i < sources[tempo_source].events.size(); 
@@ -828,18 +827,12 @@ public:
 				tick = sources[tempo_source].events[i].ticks;
 				if (tick > 0)
 				{
-					delta_time_event = true;
 					ADD(0xFD);
 					ADD_V(tick - last_tick);
 				}
 				ADD(0xDD);
 				ADD((uchar)(sources[tempo_source].get(i) * 255.0));
 				last_tick = tick;
-			}
-			if (!delta_time_event)
-			{
-				ADD(0xFD);
-				ADD_V(total_ticks);
 			}
 		}
 		ADD(0xFF);
