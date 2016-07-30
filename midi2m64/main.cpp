@@ -11,6 +11,8 @@
 using namespace std;
 
 // TODO:
+//     + Fix optimize events: remove-coincidental events should be based on "is next in series of rests" not "next event is a rest" 
+//     + Debug pitch bend refactoring
 //     + Determine m64 volume scaling, definitely sounds wrong
 //     + Build midi parsing into seq class
 //     + Add UI  
@@ -23,6 +25,8 @@ using namespace std;
 
 #define NOTE_GROUP_MAX_GAP 288
 #define MIN_AVG_GAP 2.0
+
+#define PERC_BANK_INSTRUMENT_N 0x7f
 
 unsigned short bit_mask_from_value[16] =
 	{	0x0001, 0x0003, 0x0007, 0x000F,
@@ -372,6 +376,7 @@ public:
 		vibrato_source = PARAM_SOURCE_NONE;
 		instrument = 0;
 		velocity_multiplier = 1.0;
+		map_directly = false;
 	}
 	void remap(NoteRemapping& _mapping)
 	{
@@ -380,6 +385,7 @@ public:
 		{
 			notes[i].note = (unsigned char)_mapping[notes[i].note];
 		}
+		map_directly = true;
 	}
 	void convert_clock_base(int _from_base, int _total_ticks)
 	{
@@ -441,6 +447,7 @@ public:
 	int echo_source;
 	int vibrato_source;
 	float velocity_multiplier;
+	bool map_directly;
 };
 
 class Sequence
@@ -479,9 +486,11 @@ public:
 		float last_value;
 		NoteType last_type;
 
+		
 		this_note = 0;
 		last_type = NoteType::Note;
 		cur_event = 0; 
+		
 		while(cur_event < _source.events.size())
 		{
 			while (_track.notes[this_note].ticks <=
@@ -521,6 +530,7 @@ public:
 				_source.events.pop_back();
 			}
 		}
+		
 
 		last_value = _source.events[0].value;
 		cur_event = 1;
@@ -781,7 +791,6 @@ public:
 		float fine_pitch_scaling;
 		float vibrato_scaling;
 		float note_vel;
-		bool delta_time_event;
 		int event_prev_values[256];
 
 		fine_pitch_scaling = source_fine_pitch_range / 12.0;
@@ -917,7 +926,6 @@ public:
 			}
 			for (j = 0; j < 256; event_prev_values[j++] = -1);
 			last_tick = 0;
-			delta_time_event = false;
 			while (!events.empty())
 			{
 				near_event = 0;
@@ -943,7 +951,6 @@ public:
 					val_int) {
 					if (tick != last_tick)
 					{
-						delta_time_event = true;
 						ADD(0xFD);
 						ADD_V(tick - last_tick);
 					}
@@ -960,10 +967,10 @@ public:
 					events.erase(events.begin() + near_event);
 				}
 			} 
-			if (!delta_time_event)
+			if (last_tick != total_ticks)
 			{
 				ADD(0xFD);
-				ADD_V(total_ticks);
+				ADD_V(total_ticks - last_tick);
 			}
 			ADD(0xFF);
 		}
@@ -992,20 +999,23 @@ public:
 				else if (tracks[i].notes[j].type == NoteType::Note)
 				{
 					note = tracks[i].notes[j].note;
-					note_group = cur_note_group;
-					while ((note - (note_group * 64 + NOTE_BIAS)) < 0)
+					if (!tracks[i].map_directly)
 					{
-						note_group--;
-					}
-					while ((note - (note_group * 64 + NOTE_BIAS)) >= 64)
-					{
-						note_group++;
-					}
-					if (note_group != cur_note_group)
-					{
-						ADD(0xC2);
-						ADD(note_group * 64);
-						cur_note_group = note_group;
+						note_group = cur_note_group;
+						while ((note - (note_group * 64 + NOTE_BIAS)) < 0)
+						{
+							note_group--;
+						}
+						while ((note - (note_group * 64 + NOTE_BIAS)) >= 64)
+						{
+							note_group++;
+						}
+						if (note_group != cur_note_group)
+						{
+							ADD(0xC2);
+							ADD(note_group * 64);
+							cur_note_group = note_group;
+						}
 					}
 
 					if (j == (tracks[i].notes.size() - 1))
@@ -1061,7 +1071,14 @@ public:
 						mode = 2;
 					}
 
-					note_fmt = note - (cur_note_group * 64 + NOTE_BIAS);
+					if (tracks[i].map_directly)
+					{
+						note_fmt = note;
+					}
+					else
+					{
+						note_fmt = note - (cur_note_group * 64 + NOTE_BIAS);
+					}
 					switch (mode)
 					{
 					case 1:
@@ -1422,6 +1439,7 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("Pad 2").fine_pitch_source =
 		seq.get_track_by_name("EStreamLoop").fine_pitch_source;
 	seq.get_track_by_name("EStreamLoop").fine_pitch_source = PARAM_SOURCE_NONE;
+	seq.get_track_by_name("Pad 2").pan_source = seq.new_fixed_source(1.0 - 0.17);
 
 	seq.get_track_by_name("CheddarCheese L").fine_pitch_source =
 		seq.get_track_by_name("HitEffects").fine_pitch_source;
@@ -1433,10 +1451,43 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("DistBell Echo").echo_source = seq.new_fixed_source(1.0);
 	seq.get_track_by_name("Arpegginator").echo_source = seq.new_fixed_source(1.0);
 
-	seq.get_track_by_name("Battery").pan_source = PARAM_SOURCE_NONE;
+	//seq.get_track_by_name("Battery").pan_source = PARAM_SOURCE_NONE;
+	seq.get_track_by_name("Battery").instrument = PERC_BANK_INSTRUMENT_N;
+	
+	seq.bank = 0x25;
 
-	seq.source_fine_pitch_range = 48;
-	seq.refactor_all_pitch_bends();
+	NoteRemapping drums;
+	drums[0x24] = 0x00;
+	drums[0x25] = 0x01;
+	drums[0x26] = 0x02;
+	drums[0x2c] = 0x03;
+	drums[0x32] = 0x04;
+	seq.get_track_by_name("Battery").remap(drums);
+
+	
+	i = 0;
+	while(i < seq.tracks.size())
+	{
+		if ((seq.tracks[i].name != "Pad 1"))// && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "Battery"))
+		{
+			seq.tracks.erase(seq.tracks.begin() + i);
+		}
+		else
+		{
+			i++;
+		}
+	}
+	
+	seq.get_track_by_name("Pad 1").volume_source = PARAM_SOURCE_NONE;
+	seq.get_track_by_name("Pad 1").fine_pitch_source = PARAM_SOURCE_NONE;
+
+
+	seq.get_track_by_name("Pad 1").instrument = 8;
+	//seq.get_track_by_name("Pad 2").instrument = 9;
+
+
+	//seq.source_fine_pitch_range = 48;
+	//seq.refactor_all_pitch_bends();
 	
 	seq.optimize_all();
 	///////////////////////////////////////////////////////////////////////////////////
