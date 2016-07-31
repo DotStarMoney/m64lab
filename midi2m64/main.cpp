@@ -395,6 +395,14 @@ public:
 		}
 		map_directly = true;
 	}
+	void remap_midi(NoteRemapping& _mapping)
+	{
+		int i;
+		for (i = 0; i < notes.size(); i++)
+		{
+			notes[i].note = (unsigned char)_mapping[notes[i].note];
+		}
+	}
 	void convert_clock_base(int _from_base, int _total_ticks)
 	{
 		float divisor;
@@ -652,7 +660,7 @@ public:
 					{
 						semitone_shift = (_source.events[j].value*2.0 - 1.0)*
 							source_fine_pitch_range;
-						if (fabs(semitone_shift) > 11)
+						if (fabs(semitone_shift) > 11.9)
 						{
 							semitone_offset = 
 								floor((ceil(fabs(semitone_shift) - 1.0) /
@@ -1446,7 +1454,10 @@ int main(int _argc, char** _argv)
 	seq.convert_clock_base();
 	seq.trim_events();
 
+	seq.bank = 0x25;
 
+
+	
 	///////////////////////////////////////////////////////////////////////////////////
 	seq.get_track_by_name("Pad 1").fine_pitch_source = 
 		seq.get_track_by_name("CrunchyLoop").fine_pitch_source;
@@ -1480,11 +1491,14 @@ int main(int _argc, char** _argv)
 		seq.new_fixed_source(1.0);
 
 
+	seq.get_track_by_name("Crash").instrument = 3;
+	seq.get_track_by_name("Crash").velocity_multiplier = 0.8;
+	seq.get_track_by_name("CrunchyLoop").instrument = 4;
+	seq.get_track_by_name("EStreamLoop").instrument = 5;
 
 
 	seq.get_track_by_name("Battery").instrument = PERC_BANK_INSTRUMENT_N;
 	
-	seq.bank = 0x25;
 
 	NoteRemapping drums;
 	drums[0x24] = 0x00;
@@ -1494,12 +1508,26 @@ int main(int _argc, char** _argv)
 	drums[0x32] = 0x04;
 	seq.get_track_by_name("Battery").remap(drums);
 
-	
-	
+	NoteRemapping hit_effects;
+	hit_effects[0x3d] = 0x48;
+	seq.get_track_by_name("HitEffects").remap_midi(hit_effects);
+	seq.get_track_by_name("HitEffects").instrument = 2;
+	seq.get_track_by_name("HitEffects").velocity_multiplier = 1.3;
+
+
 	i = 0;
 	while(i < seq.tracks.size())
 	{
-		if ((seq.tracks[i].name != "CheddarCheese L") && (seq.tracks[i].name != "CheddarCheese R") && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "Pad 1") && (seq.tracks[i].name != "Battery"))
+		if ((seq.tracks[i].name != "CheddarCheese L") && 
+			(seq.tracks[i].name != "CheddarCheese R") && 
+			(seq.tracks[i].name != "Pad 2") && 
+			(seq.tracks[i].name != "Pad 1") && 
+			(seq.tracks[i].name != "Battery") && 
+			(seq.tracks[i].name != "HitEffects") &&
+			(seq.tracks[i].name != "Crash") &&
+			(seq.tracks[i].name != "CrunchyLoop") &&
+			(seq.tracks[i].name != "EStreamLoop")
+			)
 		{
 			seq.tracks.erase(seq.tracks.begin() + i);
 		}
@@ -1527,8 +1555,10 @@ int main(int _argc, char** _argv)
 	seq.source_fine_pitch_range = 48;
 	seq.refactor_all_pitch_bends();
 	
-	seq.optimize_all();
+	
 	///////////////////////////////////////////////////////////////////////////////////
+
+	seq.optimize_all();
 	
 	m64.clear();
 	m64 = seq.create_m64();
