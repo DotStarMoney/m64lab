@@ -11,8 +11,6 @@
 using namespace std;
 
 // TODO:
-//     + check if some pitch bend events are an issue (pad 1 and pad 2 slight bend), also fix issue where 
-//           pitch bends aren't being spread to multiple notes
 //     + Find out why single sources are being deleted
 //     + Find ASDR settings with no delay or release
 //     + Determine m64 volume scaling, definitely sounds wrong
@@ -654,7 +652,7 @@ public:
 					{
 						semitone_shift = (_source.events[j].value*2.0 - 1.0)*
 							source_fine_pitch_range;
-						if (fabs(semitone_shift) > 12.0)
+						if (fabs(semitone_shift) > 11)
 						{
 							semitone_offset = 
 								floor((ceil(fabs(semitone_shift) - 1.0) /
@@ -704,7 +702,7 @@ public:
 						}
 						j++;
 						if (j >= _source.events.size()) break;
-					} while (_source.events[j].ticks < next_note_ticks);
+ 					} while (_source.events[j].ticks < next_note_ticks);
 					j--;
 				}
 			}
@@ -1163,7 +1161,8 @@ public:
 				return tracks[i];
 			}
 		}
-		throw std::invalid_argument("No track of name \"" + _name + "\" exists.");
+		throw std::invalid_argument("No track of name \"" + _name + 
+			"\" exists.");
 	}
 	int new_fixed_source(float _value)
 	{
@@ -1171,6 +1170,13 @@ public:
 		new_source.type = ControllerSourceType::UserFixed;
 		new_source.events.push_back(ControllerEvent(0, _value));
 		sources.push_back(new_source);
+		return sources.size() - 1;
+	}
+	int new_source_clone(int _source)
+	{
+		ControllerSource src;
+		src = sources[_source];
+		sources.push_back(src);
 		return sources.size() - 1;
 	}
 	int tempo_source; 
@@ -1460,7 +1466,8 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("CheddarCheese L").pan_source =
 		seq.new_fixed_source(0.0);
 	seq.get_track_by_name("CheddarCheese R").fine_pitch_source =
-		seq.get_track_by_name("HitEffects").fine_pitch_source;
+		seq.new_source_clone(
+			seq.get_track_by_name("HitEffects").fine_pitch_source);
 	seq.get_track_by_name("CheddarCheese R").pan_source =
 		seq.new_fixed_source(1.0);
 	seq.get_track_by_name("HitEffects").fine_pitch_source = PARAM_SOURCE_NONE;
@@ -1492,7 +1499,7 @@ int main(int _argc, char** _argv)
 	i = 0;
 	while(i < seq.tracks.size())
 	{
-		if ((seq.tracks[i].name != "CheddarCheese R") && (seq.tracks[i].name != "CheddarCheese L") && (seq.tracks[i].name != "Pad 1") && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "Battery"))
+		if ((seq.tracks[i].name != "CheddarCheese L") && (seq.tracks[i].name != "CheddarCheese R") && (seq.tracks[i].name != "Pad 2") && (seq.tracks[i].name != "Pad 1") && (seq.tracks[i].name != "Battery"))
 		{
 			seq.tracks.erase(seq.tracks.begin() + i);
 		}
@@ -1501,23 +1508,24 @@ int main(int _argc, char** _argv)
 			i++;
 		}
 	}
-	
 
 	seq.get_track_by_name("Pad 1").instrument = 8;
 	seq.get_track_by_name("Pad 2").instrument = 9;
 
+	Track& chzL = seq.get_track_by_name("CheddarCheese L");
+	seq.sources[chzL.volume_source].multiplier = 1.5;
+	seq.sources[chzL.volume_source].base_value = -0.2;
 
-	seq.get_track_by_name("CheddarCheese L").instrument = 0;
-	seq.get_track_by_name("CheddarCheese R").instrument = 1;
+	chzL.instrument = 0;
 
+	Track& chzR = seq.get_track_by_name("CheddarCheese R");
+	seq.sources[chzR.volume_source].multiplier = 1.5;
+	seq.sources[chzR.volume_source].base_value = -0.2;
+	chzR.instrument = 1;
 
-	
 
 	seq.source_fine_pitch_range = 48;
 	seq.refactor_all_pitch_bends();
-
-
-	
 	
 	seq.optimize_all();
 	///////////////////////////////////////////////////////////////////////////////////
