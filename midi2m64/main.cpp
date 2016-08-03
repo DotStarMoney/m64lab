@@ -881,7 +881,7 @@ public:
 					EventStream(
 						&sources[tracks[i].echo_source],
 						0xD4,
-						255, 0)
+						200, 0)
 					);
 			}
 			if (tracks[i].fine_pitch_source == PARAM_SOURCE_NONE)
@@ -1458,8 +1458,7 @@ int main(int _argc, char** _argv)
 
 
 	
-	///////////////////////////////////////////////////////////////////////////////////
-	seq.get_track_by_name("Pad 1").fine_pitch_source = 
+	seq.get_track_by_name("Pad 1").fine_pitch_source =
 		seq.get_track_by_name("CrunchyLoop").fine_pitch_source;
 	seq.get_track_by_name("CrunchyLoop").fine_pitch_source = PARAM_SOURCE_NONE;
 	seq.get_track_by_name("Pad 1").echo_source = seq.new_fixed_source(1.0);
@@ -1468,7 +1467,7 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("Pad 2").fine_pitch_source =
 		seq.get_track_by_name("EStreamLoop").fine_pitch_source;
 	seq.get_track_by_name("EStreamLoop").fine_pitch_source = PARAM_SOURCE_NONE;
-	seq.get_track_by_name("Pad 2").pan_source = 
+	seq.get_track_by_name("Pad 2").pan_source =
 		seq.new_fixed_source(1.0 - 0.17);
 	seq.get_track_by_name("Pad 2").echo_source = seq.new_fixed_source(1.0);
 
@@ -1485,20 +1484,47 @@ int main(int _argc, char** _argv)
 
 
 	seq.get_track_by_name("DistBell").echo_source = seq.new_fixed_source(1.0);
-	seq.get_track_by_name("DistBell Echo").echo_source = 
+	seq.get_track_by_name("DistBell Echo").echo_source =
 		seq.new_fixed_source(1.0);
+
+	seq.get_track_by_name("DistBell").pan_source = seq.new_fixed_source(0.7);
+	seq.get_track_by_name("DistBell Echo").pan_source =
+		seq.new_fixed_source(0.3);
+	seq.get_track_by_name("Lead").pan_source = seq.new_fixed_source(0.7);
+	seq.get_track_by_name("Lead Echo").pan_source =
+		seq.new_fixed_source(0.2);
 	seq.get_track_by_name("Arpegginator").echo_source =
 		seq.new_fixed_source(1.0);
 
 
+
 	seq.get_track_by_name("Crash").instrument = 3;
 	seq.get_track_by_name("Crash").velocity_multiplier = 0.8;
-	seq.get_track_by_name("CrunchyLoop").instrument = 4;
-	seq.get_track_by_name("EStreamLoop").instrument = 5;
+	seq.get_track_by_name("CrunchyLoop").instrument = 5;
+	seq.get_track_by_name("CrunchyLoop").pan_source = seq.new_fixed_source(0.8);
+	seq.get_track_by_name("EStreamLoop").instrument = 6;
+	seq.get_track_by_name("Arpegginator").instrument = 4;
+	seq.get_track_by_name("Arpegginator").transpose(-10);
+	seq.get_track_by_name("Arpegginator").velocity_multiplier = 1.2;
 
+	seq.get_track_by_name("DistBell").instrument = 0x0C;
+	seq.get_track_by_name("DistBell").velocity_multiplier = 1.2;
+
+	seq.get_track_by_name("DistBell Echo").instrument = 0x0D;
+	seq.get_track_by_name("DistBell Echo").velocity_multiplier = 0.7;
+
+	seq.get_track_by_name("Lead").instrument = 0x0E;
+	seq.get_track_by_name("Lead Echo").instrument = 0x0F;
+	seq.get_track_by_name("Lead").transpose(-6);
+	seq.get_track_by_name("Lead").velocity_multiplier = 1.15;
+	seq.get_track_by_name("Lead Echo").transpose(-6);
+	seq.get_track_by_name("Lead Echo").velocity_multiplier = 0.7;
+
+	seq.get_track_by_name("DistBell").transpose(-6);
+	seq.get_track_by_name("DistBell Echo").transpose(-6);
 
 	seq.get_track_by_name("Battery").instrument = PERC_BANK_INSTRUMENT_N;
-	
+
 
 	NoteRemapping drums;
 	drums[0x24] = 0x00;
@@ -1515,27 +1541,8 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("HitEffects").velocity_multiplier = 1.3;
 
 
-	i = 0;
-	while(i < seq.tracks.size())
-	{
-		if ((seq.tracks[i].name != "CheddarCheese L") && 
-			(seq.tracks[i].name != "CheddarCheese R") && 
-			(seq.tracks[i].name != "Pad 2") && 
-			(seq.tracks[i].name != "Pad 1") && 
-			(seq.tracks[i].name != "Battery") && 
-			(seq.tracks[i].name != "HitEffects") &&
-			(seq.tracks[i].name != "Crash") &&
-			(seq.tracks[i].name != "CrunchyLoop") &&
-			(seq.tracks[i].name != "EStreamLoop")
-			)
-		{
-			seq.tracks.erase(seq.tracks.begin() + i);
-		}
-		else
-		{
-			i++;
-		}
-	}
+
+
 
 	seq.get_track_by_name("Pad 1").instrument = 8;
 	seq.get_track_by_name("Pad 2").instrument = 9;
@@ -1551,12 +1558,36 @@ int main(int _argc, char** _argv)
 	seq.sources[chzR.volume_source].base_value = -0.2;
 	chzR.instrument = 1;
 
+	/*
+	i = 0;
+	while (i < seq.tracks.size())
+	{
+	if ((seq.tracks[i].name != "CheddarCheese L") &&
+	(seq.tracks[i].name != "CheddarCheese R") &&
+	(seq.tracks[i].name != "Pad 2") &&
+	(seq.tracks[i].name != "Pad 1") &&
+	(seq.tracks[i].name != "Battery") &&
+	(seq.tracks[i].name != "HitEffects") &&
+	(seq.tracks[i].name != "Crash") &&
+	(seq.tracks[i].name != "CrunchyLoop") &&
+	(seq.tracks[i].name != "EStreamLoop") &&
+	(seq.tracks[i].name != "Arpegginator") &&
+	(seq.tracks[i].name != "DistBell") &&
+	(seq.tracks[i].name != "DistBell Echo")
+	)
+	{
+	seq.tracks.erase(seq.tracks.begin() + i);
+	}
+	else
+	{
+	i++;
+	}
+	}
+	*/
 
 	seq.source_fine_pitch_range = 48;
 	seq.refactor_all_pitch_bends();
-	
-	
-	///////////////////////////////////////////////////////////////////////////////////
+
 
 	seq.optimize_all();
 	
