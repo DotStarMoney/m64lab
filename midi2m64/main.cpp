@@ -13,12 +13,12 @@ using namespace std;
 // TODO:
 //     + Find out why single sources are being deleted
 //     + Find ASDR settings with no delay or release
-//     + Determine m64 volume scaling, definitely sounds wrong
+//     + Determine m64 volume/echo/vibrato scaling, definitely sounds wrong
 //     + Build midi parsing into seq class
 //     + Add UI  
 
 #ifndef _NDEBUG
-#define DEBUG_MIDI_FILE "LastImpactElectro.mid"
+#define DEBUG_MIDI_FILE "" //"LastImpactElectro.mid"
 #endif
 
 #define NOTE_BIAS 21
@@ -1454,10 +1454,10 @@ int main(int _argc, char** _argv)
 	seq.convert_clock_base();
 	seq.trim_events();
 
+
+	/*
 	seq.bank = 0x25;
 
-
-	
 	seq.get_track_by_name("Pad 1").fine_pitch_source =
 		seq.get_track_by_name("CrunchyLoop").fine_pitch_source;
 	seq.get_track_by_name("CrunchyLoop").fine_pitch_source = PARAM_SOURCE_NONE;
@@ -1541,9 +1541,6 @@ int main(int _argc, char** _argv)
 	seq.get_track_by_name("HitEffects").velocity_multiplier = 1.3;
 
 
-
-
-
 	seq.get_track_by_name("Pad 1").instrument = 8;
 	seq.get_track_by_name("Pad 2").instrument = 9;
 
@@ -1558,37 +1555,12 @@ int main(int _argc, char** _argv)
 	seq.sources[chzR.volume_source].base_value = -0.2;
 	chzR.instrument = 1;
 
-	/*
-	i = 0;
-	while (i < seq.tracks.size())
-	{
-	if ((seq.tracks[i].name != "CheddarCheese L") &&
-	(seq.tracks[i].name != "CheddarCheese R") &&
-	(seq.tracks[i].name != "Pad 2") &&
-	(seq.tracks[i].name != "Pad 1") &&
-	(seq.tracks[i].name != "Battery") &&
-	(seq.tracks[i].name != "HitEffects") &&
-	(seq.tracks[i].name != "Crash") &&
-	(seq.tracks[i].name != "CrunchyLoop") &&
-	(seq.tracks[i].name != "EStreamLoop") &&
-	(seq.tracks[i].name != "Arpegginator") &&
-	(seq.tracks[i].name != "DistBell") &&
-	(seq.tracks[i].name != "DistBell Echo")
-	)
-	{
-	seq.tracks.erase(seq.tracks.begin() + i);
-	}
-	else
-	{
-	i++;
-	}
-	}
-	*/
+
 
 	seq.source_fine_pitch_range = 48;
+	*/
+
 	seq.refactor_all_pitch_bends();
-
-
 	seq.optimize_all();
 	
 	m64.clear();
